@@ -269,10 +269,12 @@ class GameView(View):
 
         fire_button_texture_pressed = load_texture('textures/fire_button_pressed.png')
 
-        fire_button = FixedUITextureButton(texture=fire_button_texture, texture_hovered=fire_button_texture_hovered,
+        self.fire_button = FixedUITextureButton(texture=fire_button_texture, texture_hovered=fire_button_texture_hovered,
                                            texture_pressed=fire_button_texture_pressed,
                                            texture_disabled=fire_button_texture_disabled, scale=fire_button_scale)
-        fire_button.on_click = self.fire
+        self.fire_button.on_click = self.fire
+        #  fire button will be disabled if user not currently active
+        self.fire_button.disabled = self.game.active_player.client != self.window.client
 
         # adding exit button
         quit_button_texture = load_texture('textures/LobbyExitButton.png')
@@ -318,7 +320,7 @@ class GameView(View):
         ui_anchor.add(vote_button, anchor_x='left', anchor_y='bottom',
                       align_x=int(45 * window.scale + checkbox_empty_texture.width * checkbox_scale),
                       align_y=int(50 * window.scale + quit_button_texture.height * quit_button_scale))
-        ui_anchor.add(fire_button, anchor_x='right',
+        ui_anchor.add(self.fire_button, anchor_x='right',
                       align_x=int(-self.window.width / 5.45 - window.width / 2 - 25 * window.scale),
                       anchor_y='bottom',
                       align_y=int(
@@ -367,6 +369,9 @@ class GameView(View):
         user_formula = self.formula_field.text
         game = self.window.lobby.game
 
+        if game.active_player.client != self.window.client:  # cannot shoot if not active
+            return
+
         if game.shooting:  # cannot shoot until previous shoot end
             return
 
@@ -381,7 +386,8 @@ class GameView(View):
 
         # setting all parameters for shooting
         game.shooting = True
-        game.formula_current_x = game.active_player.x
+        game.formula_current_x = game.active_player.x * (-1 if game.active_player in game.right_team else 1)  # starting
+        # always from negative x value, bc every team have reversed map, so they are both in the left part of screen
         game.formula_segments = shape_list.ShapeElementList()
 
     def send_message(self, text):
@@ -422,13 +428,14 @@ class GameView(View):
     def pass_turn_to_next_player(self):
         game = self.window.lobby.game
         self.timer.cancel()
+
         if self.is_game_end():
             self.game_finish()
             return
 
-        """pass the turn to the next alive player in opposite team"""
+        #  pass the turn to the next alive player in opposite team
         next_team = game.left_team.copy() if game.active_player in game.right_team else game.right_team.copy()
-        next_team.extend(next_team)  # making part of 'cycle'
+        next_team.extend(next_team)
         active_player = game.active_player
         next_team = next_team[(next_team.index(game.prev_active_player) if game.prev_active_player else -1) + 1:]
         for player in next_team:
@@ -443,6 +450,11 @@ class GameView(View):
                 self.timer.start()
 
                 break
+
+        if game.active_player.client == self.window.client:
+            self.fire_button.disabled = False
+        else:
+            self.fire_button.disabled = True
 
     def game_finish(self):
         from lobby import LobbyView
@@ -542,27 +554,30 @@ class GameView(View):
 
         if game.shooting:
             # calculation few next segments of graphic
-
+            shooter_right: bool = game.active_player in game.right_team  # if shooter is from right team, mirroring
+            # his function to start from the right side
             graph_left_edge = int(
                 window.SCREEN_WIDTH - (self.graph_top_edge - self.graph_bottom_edge) * game.proportion_x2y) // 2
             graph_right_edge = window.SCREEN_WIDTH - graph_left_edge
             graph_width = (graph_right_edge - graph_left_edge)
 
-            segments_per_tick = int(12 * self.window.scale)
+            segments_per_tick = int(12 * self.window.scale)  # sets the speed of function drawing (segments per frame)
+            x_step_px = 0.5 * window.scale  # the size of function segment in pixels
+            x_step = x_step_px * 2 * game.x_edge / graph_width
+            graph_y_center = (self.graph_top_edge + self.graph_bottom_edge) / 2
+            graph_height = (self.graph_top_edge - self.graph_bottom_edge) / 2
             try:
-                translation_y_delta = game.active_player.y - 1 * game.formula.evaluate(game.active_player.x)
-                x_step_px = 0.5 * window.scale  # the size of function step in px
-                x_step = x_step_px * 2 * game.x_edge / graph_width * (1 if game.active_player.left_player else -1)
-                point_list = []
+                translation_y_delta = game.active_player.y \
+                                      - game.formula.evaluate(game.active_player.x * (-1 if shooter_right else 1))
+                point_list = []  # segment points
                 for _ in range(segments_per_tick + 1):
                     # evaluating next point coordinates
                     y_val = game.formula.evaluate(game.formula_current_x) + translation_y_delta
 
-                    point_list.append((window.SCREEN_X_CENTER +
-                                       graph_width / 2 / window.lobby.game.x_edge * game.formula_current_x,
-                                       (self.graph_top_edge + self.graph_bottom_edge) / 2 +
-                                       (self.graph_top_edge - self.graph_bottom_edge) / 2 / window.lobby.game.y_edge * (
-                                           y_val)))
+                    point_list.append((window.SCREEN_X_CENTER + graph_width / 2 / window.lobby.game.x_edge
+                                       * game.formula_current_x * (-1 if shooter_right else 1),
+                                       graph_y_center + graph_height / window.lobby.game.y_edge * y_val)
+                                      )
 
                     # increasing for next step
                     game.formula_current_x += x_step
@@ -574,7 +589,7 @@ class GameView(View):
                 game.formula_segments.append(strip_line)  # adding new segment
 
                 # checking collision with other players or obstacles
-                for point in strip_line.points:
+                for point in point_list:
                     # checking for collision with obstacles:
                     for obstacle_index in range(len(game.obstacles)):
 
