@@ -78,6 +78,80 @@ class Game:
         # list of formula segments
         self.formula_segments = shape_list.ShapeElementList()
 
+
+    def create_obstacles(self):
+        """generates obstacle on server machine using axes units coordinates,
+        so these obstacles will be independent of screen resolution and before drawing
+        must be scaled.
+
+        These coordinates are common to all player and provides reference data to calculate
+        collision."""
+
+        self.obstacles.clear()  # deleting old obstacles
+        max_polygons = int(self.obstacle_frequency * 0.8 * self.proportion_x2y / self._proportion_x2y_max)
+        field_height_scale = self.y_edge / 15.  # scale of the field in comparison to standard 15y field
+        for i in range(
+                int(max_polygons * (1 + random.uniform(-0.15, 0.15)))):  # creating +-15% from max_polygons times
+            """generating new polygon"""
+            while True:
+                vertices = random.randint(3, 20)  # quantity of vertices in current polygon
+                # polygons with more vertices normally will be bigger than other
+                max_radius = int(random.uniform(1 * field_height_scale,
+                                                6*field_height_scale + 0.25 * field_height_scale * vertices))
+
+                # generating angles as part of 2 Pi radians:
+                angle_sum = 0
+                angles = []
+                for _ in range(vertices):
+                    angles.append(random.randint(35, 100))
+                    angle_sum += angles[-1]
+                for angle in range(vertices):
+                    angles[angle] = angles[angle] / angle_sum
+                obstacle = []
+                center_x = random.randint(max_radius - self.x_edge, self.x_edge - max_radius)
+                center_y = random.randint(max_radius - self.y_edge, self.y_edge - max_radius)
+                angle = 0
+                last_scale = 0.75
+                for part in angles:
+                    angle += 2 * math.pi * part
+                    scale = random.uniform(0.25, 1)
+                    scale = (scale + last_scale / 2) * 2 / 3  # making polygon more convex by smoothing angles
+                    last_scale = scale
+                    obstacle.append(
+                        (int(center_x + scale * max_radius * math.cos(angle)),
+                         int(center_y + scale * max_radius * math.sin(angle))
+                         )
+                    )
+
+                # checking polygon for collision with other obstacles
+                is_intersecting = False
+                for polygon in self.obstacles:
+                    if geometry.are_polygons_intersecting(polygon, obstacle):
+                        is_intersecting = True
+                        break
+                if is_intersecting:
+                    continue
+
+                # checking for collision with players
+                #TODO: make player_height a parameter of the game so as not to calculate it a thousand times
+                player_height = 0  # height of player in axes units
+                for player in self.all_players:
+                    player_polygon = [(player.sprite.center_x - player.sprite.width / 2,  # creating "hitbox" of player
+                                       player.sprite.center_y + player.sprite.height / 2),
+                                      (player.sprite.center_x + player.sprite.width / 2,
+                                       player.sprite.center_y + player.sprite.height / 2),
+                                      (player.sprite.center_x + player.sprite.width / 2,
+                                       player.sprite.center_y - player.sprite.height / 2),
+                                      (player.sprite.center_x - player.sprite.width / 2,
+                                       player.sprite.center_y - player.sprite.height / 2)]
+                    if geometry.are_polygons_intersecting(player_polygon, obstacle):
+                        is_intersecting = True
+                        break
+                if is_intersecting:
+                    continue
+                break
+            self.obstacles.append(obstacle)
+
     def prepare(self):
         self.timer_time = self.max_time_s
         self.prev_active_player = None
@@ -193,7 +267,7 @@ class GameView(View):
         self.game_event_manager = GameEventManager()
 
         # generating obstacles
-        self.create_obstacles()
+        self.game.create_obstacles()
         self.create_obstacles_batch()
 
         # adding thread to timer func
@@ -201,70 +275,6 @@ class GameView(View):
         self.timer = Timer(1, self.time_tick)
         self.timer.start()
 
-    def create_obstacles(self):
-        """This method generates obstacles for current game
-        (now only locally) """
-
-        game = self.window.lobby.game
-        game.obstacles.clear()  # deleting old obstacles
-        max_polygons = int(game.obstacle_frequency * 0.8 * game.proportion_x2y / game._proportion_x2y_max)
-        for i in range(
-                int(max_polygons * (1 + random.randint(-15, 15) / 100))):  # creating +-15% from max_polygons times
-            """generating new polygon"""
-            while True:
-                vertices = random.randint(3, 20)
-                max_radius = int(random.randint(20, 150 + 3 * vertices) * self.window.scale)
-
-                # generating angles as part of 2 Pi radians:
-                angle_sum = 0
-                angles = []
-                for _ in range(vertices):
-                    angles.append(random.randint(35, 100))
-                    angle_sum += angles[-1]
-                for angle in range(vertices):
-                    angles[angle] = angles[angle] / angle_sum
-                obstacle = []
-                center_x = random.randint(self.graph_left_edge + max_radius, self.graph_right_edge - max_radius)
-                center_y = random.randint(self.graph_bottom_edge + max_radius, self.graph_top_edge - max_radius)
-                angle = 0
-                last_scale = 0.75
-                for part in angles:
-                    angle += 2 * math.pi * part
-                    scale = random.randint(25, 100) / 100
-                    scale = (scale + last_scale / 2) * 2 / 3
-                    last_scale = scale
-                    obstacle.append(
-                        (int(center_x + scale * max_radius * math.cos(angle)),
-                         int(center_y + scale * max_radius * math.sin(angle))
-                         )
-                    )
-
-                # checking polygon for collision with others
-                is_intersecting = False
-                for polygon in game.obstacles:
-                    if geometry.are_polygons_intersecting(polygon, obstacle):
-                        is_intersecting = True
-                        break
-                if is_intersecting:
-                    continue
-
-                # checking for collision with players
-                for player in game.all_players:
-                    player_polygon = [(player.sprite.center_x - player.sprite.width / 2,  # creating "hitbox" of player
-                                       player.sprite.center_y + player.sprite.height / 2),
-                                      (player.sprite.center_x + player.sprite.width / 2,
-                                       player.sprite.center_y + player.sprite.height / 2),
-                                      (player.sprite.center_x + player.sprite.width / 2,
-                                       player.sprite.center_y - player.sprite.height / 2),
-                                      (player.sprite.center_x - player.sprite.width / 2,
-                                       player.sprite.center_y - player.sprite.height / 2)]
-                    if geometry.are_polygons_intersecting(player_polygon, obstacle):
-                        is_intersecting = True
-                        break
-                if is_intersecting:
-                    continue
-                break
-            game.obstacles.append(obstacle)
 
     def time_tick(self):
         self.window.lobby.game.timer_time -= 1
