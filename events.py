@@ -14,6 +14,7 @@ See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with MathGraph.
 If not, see <https://www.gnu.org/licenses/>.
 """
+from abc import ABC, abstractmethod
 from threading import Timer
 from typing import List
 from game import Game, GameView
@@ -51,18 +52,31 @@ class GameEndEvent(GameEvent):
         super().__init__(action="GameEnd")
 
 
-class EventManager:
-    """contains queue of the events which can be executed using execute_events"""
+class EventManager(ABC):
+    """Keeps event queue inside and handles them
+
+    use execute_events to dequeue all events and execute them (abstract method)
+    use add_local_event to add an event to the queue
+
+    """
 
     def __init__(self):
         self.events: List[GameEvent] = []
 
+    @abstractmethod
     def execute_events(self, **kwargs):
-        """override this function in dependence of events type"""
+        """
+        dequeues all events and executes them. It doesn't neither receiving them nor adding any new.
+
+        override this function in dependence of events type"""
         pass
 
     def dispatchEvent(event: GameEvent, game: Game):
-        """dispatches some event to the dedicated server"""
+        """dispatches some event to the dedicated server
+        in development
+        """
+        # TODO
+        pass
 
     def add_local_event(self, event: GameEvent):
         if event:
@@ -70,33 +84,22 @@ class EventManager:
 
 
 class GameEventManager(EventManager):
+    """Handles in-game events need to be executed locally on client computer"""
 
     def listen_game_events(self, game: Game):
-        """Retrieving both local and dedicated events and saves it inside Manager"""
+        """creating local events in single-player game instead of receiving from dedicated server"""
 
-        if game.multiplayer:
-            # receiving data from dedicated server
-            pass
-            return []
-
-        # if game is local, creating events here
-
-        # Timer events
-        if game.timer_time <= 0:
-
+        if game.timer_time <= 0:  # catching timer event
             if game.is_game_end():
                 self.add_local_event(GameEndEvent())
             else:
-
                 new_active_player = game.get_next_player()
                 self.add_local_event(ActivePlayerChangeEvent(new_active_player))
-
-                # when bot becomes an active player we're starting thread for him and waiting for shoot event
                 if new_active_player.computer_player:
+                    # when bot becomes an active player we're starting thread for him and waiting for shoot event
                     pass
 
     def execute_events(self, view: GameView):
-        """executes all events from internal queue and deletes them"""
 
         if not self.events:
             return
@@ -109,8 +112,6 @@ class GameEventManager(EventManager):
 
                 case "ActivePlayerChange":
                     view.timer.cancel()  # stopping timer
-
-                    # changing previous and active players
                     game.prev_active_player = game.active_player
                     game.active_player = game.get_next_player()
 
@@ -120,7 +121,7 @@ class GameEventManager(EventManager):
                     else:
                         view.fire_button.disabled = True
 
-                    self.add_local_event(GameEvent("TimerReset"))  # adding timer reset action to the queue
+                    self.add_local_event(GameEvent("TimerReset"))  # adding timer reset event to the queue
 
                 case "TimerReset":
                     # resetting timer time to the maximum value and starting new Timer thread

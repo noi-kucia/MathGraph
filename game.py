@@ -145,14 +145,12 @@ class GameView(View):
 
     def __init__(self, window: Window):
         super().__init__(window)
-
         self.obstacle_border_batch_shapes = None
         self.obstacles_batch: pyglet.graphics.Batch() = None
         self.obstacle_body_batch_shapes = None
         self.formula_field: AdvancedUIInputText = None
         self.time_text: Text = None
-        self.game_field_objects = shape_list.ShapeElementList()  # shape_list to contain all static elements
-        # of game field
+        self.game_field_objects = shape_list.ShapeElementList()  # contains all static shape elements of the interface
         self.nick_names = []  # list to keep nick Text objects
 
         if not window.lobby.game:
