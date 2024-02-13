@@ -405,27 +405,17 @@ class GameView(View):
         """This function activates when user press fire button"""
         user_formula = self.formula_field.text
         game = self.window.lobby.game
-
         if game.active_player.client != self.window.client:  # cannot shoot if not active
             return
-
         if game.shooting:  # cannot shoot until previous shoot end
             return
-
         try:
-            game.formula = Formula(user_formula)
+            formula = Formula(user_formula)
         except TranslateError:
             self.send_message('Something went wrong during translation,\nformula is not correct!')
             return
-
-        # stopping timer
-        self.timer.cancel()
-
-        # setting all parameters for shooting
-        game.shooting = True
-        game.formula_current_x = game.active_player.x * (-1 if game.active_player in game.right_team else 1)  # starting
-        # always from negative x value, bc every team have reversed map, so they are both in the left part of screen
-        game.formula_segments = shape_list.ShapeElementList()
+        from events import StartFireEvent
+        self.game_event_manager.add_local_event(StartFireEvent(formula))
 
     def send_message(self, text):
         message_box = gui.UIMessageBox(
