@@ -264,7 +264,7 @@ class GameView(View):
                 if is_intersecting:
                     continue
                 break
-            self.window.lobby.game.obstacles.append(obstacle)
+            game.obstacles.append(obstacle)
 
     def time_tick(self):
         self.window.lobby.game.timer_time -= 1
@@ -451,7 +451,6 @@ class GameView(View):
         it's a miracle that it works. Pls, don't touch the part with pyclipper.
 
         clipper is the polygon of "blow", it's a bit randomized and has given size as radius"""
-        # TODO: remade to change only one polygon, mb Batch.ivalidate will be useful
 
         window = self.window
         game = window.lobby.game
