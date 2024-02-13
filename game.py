@@ -438,36 +438,6 @@ class GameView(View):
         player.sprite.texture = player.texture_left_dead if player.left_player else player.texture_right_dead
         player.alive = False
 
-    def pass_turn_to_next_player(self):
-        game = self.window.lobby.game
-        self.timer.cancel()
-
-        if self.is_game_end():
-            self.game_finish()
-            return
-
-        #  pass the turn to the next alive player in opposite team
-        next_team = game.left_team.copy() if game.active_player in game.right_team else game.right_team.copy()
-        next_team.extend(next_team)
-        active_player = game.active_player
-        next_team = next_team[(next_team.index(game.prev_active_player) if game.prev_active_player else -1) + 1:]
-        for player in next_team:
-            if player.alive:
-                # making first alive player active
-                game.active_player = player
-                game.prev_active_player = active_player
-
-                # resetting timer
-                game.timer_time = game.max_time_s
-                self.timer = Timer(1, self.time_tick)
-                self.timer.start()
-
-                break
-
-        if game.active_player.client == self.window.client:
-            self.fire_button.disabled = False
-        else:
-            self.fire_button.disabled = True
 
     def game_finish(self):
         from lobby import LobbyView
