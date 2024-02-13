@@ -482,7 +482,7 @@ class LobbyView(View):
     def start_solo_game(self, event):
 
         # preparing new game
-        game = self.lobby.game = Game(multiplayer=self.lobby.multiplayer)
+        game = self.lobby.game = Game(multiplayer=False)
         game.axes_marked = self.lobby.auxiliary_marks
         game.marks_frequency = self.lobby.marks_frequency
         game.friendly_fire = self.lobby.friendly_fire

@@ -91,7 +91,8 @@ anything. You need to think only about how function will raise after your positi
 
 ![translation](resources/translation%20example.jpg)
 
-Hint: try to make some formulas, which grows only on certain parts and then combine them. For example `(abs(x-a)-abs(x-b))` 
+Hint: try to make some formulas, which grows only on certain parts and then combine them.<br>
+For example `(abs(x-a)-abs(x-b))` 
 will be growing only on [a;b] and combining them you can make steps up or down:
 
 ![example](resources/steps%20example.png)

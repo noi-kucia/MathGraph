@@ -21,7 +21,7 @@ import math
 import sys
 import time
 from threading import Timer
-from typing import Tuple
+from typing import Tuple, List
 
 import pyglet.graphics
 
@@ -47,7 +47,7 @@ class Game:
 
         self.multiplayer = multiplayer
         self.friendly_fire = friendly_fire_enable
-        self.prev_active_player = None
+        self.prev_active_player: Player = None
         self.max_time_s = max_time_s
         self.timer_time = max_time_s  # in-game timer time
         self.obstacles = []  # list of obstacle polygons
@@ -102,7 +102,41 @@ class Game:
             player.left_player = False
             player.alive = True
         for player in self.left_team:
+            player.left_player = True
             player.alive = True
+
+    def is_game_end(self) -> bool:
+        end = True
+        for player in self.right_team:
+            if player.alive:
+                end = False
+                break
+        if end:
+            return True
+        end = True
+        for player in self.left_team:
+            if player.alive:
+                end = False
+        return end
+
+    def get_next_player(self) -> Player:
+        """returns Player object of the next player, who will be active.
+        Next player is selected from opposite team always"""
+
+        if self.active_player in self.left_team:
+            next_team = self.right_team.copy()
+        else:
+            next_team = self.left_team.copy()
+
+        try:
+            player_index = next_team.index(self.prev_active_player) + 1
+        except ValueError:
+            player_index = 0
+        while not next_team[player_index % len(next_team)].alive:
+            player_index += 1
+
+        new_active_player = next_team[player_index % len(next_team)]
+        return new_active_player
 
 
 class GameView(View):
@@ -111,14 +145,12 @@ class GameView(View):
 
     def __init__(self, window: Window):
         super().__init__(window)
-
         self.obstacle_border_batch_shapes = None
         self.obstacles_batch: pyglet.graphics.Batch() = None
         self.obstacle_body_batch_shapes = None
         self.formula_field: AdvancedUIInputText = None
         self.time_text: Text = None
-        self.game_field_objects = shape_list.ShapeElementList()  # shape_list to contain all static elements
-        # of game field
+        self.game_field_objects = shape_list.ShapeElementList()  # contains all static shape elements of the interface
         self.nick_names = []  # list to keep nick Text objects
 
         if not window.lobby.game:
@@ -155,6 +187,10 @@ class GameView(View):
         # adding UI
         self.manager = gui.UIManager()  # for all gui elements
         self.add_ui()
+
+        # adding game event manager object
+        from events import GameEventManager
+        self.game_event_manager = GameEventManager()
 
         # generating obstacles
         self.create_obstacles()
@@ -269,10 +305,13 @@ class GameView(View):
 
         fire_button_texture_pressed = load_texture('textures/fire_button_pressed.png')
 
-        fire_button = FixedUITextureButton(texture=fire_button_texture, texture_hovered=fire_button_texture_hovered,
-                                           texture_pressed=fire_button_texture_pressed,
-                                           texture_disabled=fire_button_texture_disabled, scale=fire_button_scale)
-        fire_button.on_click = self.fire
+        self.fire_button = FixedUITextureButton(texture=fire_button_texture,
+                                                texture_hovered=fire_button_texture_hovered,
+                                                texture_pressed=fire_button_texture_pressed,
+                                                texture_disabled=fire_button_texture_disabled, scale=fire_button_scale)
+        self.fire_button.on_click = self.fire
+        #  fire button will be disabled if user not currently active
+        self.fire_button.disabled = self.game.active_player.client != self.window.client
 
         # adding exit button
         quit_button_texture = load_texture('textures/LobbyExitButton.png')
@@ -318,7 +357,7 @@ class GameView(View):
         ui_anchor.add(vote_button, anchor_x='left', anchor_y='bottom',
                       align_x=int(45 * window.scale + checkbox_empty_texture.width * checkbox_scale),
                       align_y=int(50 * window.scale + quit_button_texture.height * quit_button_scale))
-        ui_anchor.add(fire_button, anchor_x='right',
+        ui_anchor.add(self.fire_button, anchor_x='right',
                       align_x=int(-self.window.width / 5.45 - window.width / 2 - 25 * window.scale),
                       anchor_y='bottom',
                       align_y=int(
@@ -366,23 +405,17 @@ class GameView(View):
         """This function activates when user press fire button"""
         user_formula = self.formula_field.text
         game = self.window.lobby.game
-
+        if game.active_player.client != self.window.client:  # cannot shoot if not active
+            return
         if game.shooting:  # cannot shoot until previous shoot end
             return
-
         try:
-            game.formula = Formula(user_formula)
+            formula = Formula(user_formula)
         except TranslateError:
             self.send_message('Something went wrong during translation,\nformula is not correct!')
             return
-
-        # stopping timer
-        self.timer.cancel()
-
-        # setting all parameters for shooting
-        game.shooting = True
-        game.formula_current_x = game.active_player.x
-        game.formula_segments = shape_list.ShapeElementList()
+        from events import StartFireEvent
+        self.game_event_manager.add_local_event(StartFireEvent(formula))
 
     def send_message(self, text):
         message_box = gui.UIMessageBox(
@@ -405,44 +438,6 @@ class GameView(View):
         player.sprite.texture = player.texture_left_dead if player.left_player else player.texture_right_dead
         player.alive = False
 
-    def is_game_end(self):
-
-        end = True
-        for player in self.window.lobby.game.right_team:
-            if player.alive:
-                end = False
-        if end:
-            return True
-        end = True
-        for player in self.window.lobby.game.left_team:
-            if player.alive:
-                end = False
-        return end
-
-    def pass_turn_to_next_player(self):
-        game = self.window.lobby.game
-        self.timer.cancel()
-        if self.is_game_end():
-            self.game_finish()
-            return
-
-        """pass the turn to the next alive player in opposite team"""
-        next_team = game.left_team.copy() if game.active_player in game.right_team else game.right_team.copy()
-        next_team.extend(next_team)  # making part of 'cycle'
-        active_player = game.active_player
-        next_team = next_team[(next_team.index(game.prev_active_player) if game.prev_active_player else -1) + 1:]
-        for player in next_team:
-            if player.alive:
-                # making first alive player active
-                game.active_player = player
-                game.prev_active_player = active_player
-
-                # resetting timer
-                game.timer_time = game.max_time_s
-                self.timer = Timer(1, self.time_tick)
-                self.timer.start()
-
-                break
 
     def game_finish(self):
         from lobby import LobbyView
@@ -528,41 +523,42 @@ class GameView(View):
                 last_point = point
             self.obstacle_border_batch_shapes.append(border)
 
-
-
-
-    def on_update(self, delta_time: float = 1 / 60):
+    def on_update(self, delta_time=1. / 60):
         window = self.window
         game = window.lobby.game
 
-        # if no time left, pass the turn to the next player
-        if self.window.lobby.game.timer_time <= 0:
-            self.pass_turn_to_next_player()
-            return
+        self.game_event_manager.listen_game_events(game)  # receiving new events to be executed
+        try:
+            self.game_event_manager.execute_events(self)  # executing events locally
+        except Exception as e:
+            print(e)
 
         if game.shooting:
             # calculation few next segments of graphic
-
+            shooter_right: bool = game.active_player in game.right_team  # if shooter is from right team, mirroring
+            # his function to start from the right side
             graph_left_edge = int(
                 window.SCREEN_WIDTH - (self.graph_top_edge - self.graph_bottom_edge) * game.proportion_x2y) // 2
             graph_right_edge = window.SCREEN_WIDTH - graph_left_edge
             graph_width = (graph_right_edge - graph_left_edge)
 
-            segments_per_tick = int(12 * self.window.scale)
+            segments_per_tick = int(12 * self.window.scale)  # sets the speed of function drawing (segments per frame)
+            x_step_px = 0.5 * window.scale  # the size of function segment in pixels
+            x_step = x_step_px * 2 * game.x_edge / graph_width
+            graph_y_center = (self.graph_top_edge + self.graph_bottom_edge) / 2
+            graph_height = (self.graph_top_edge - self.graph_bottom_edge) / 2
             try:
-                translation_y_delta = game.active_player.y - 1 * game.formula.evaluate(game.active_player.x)
-                x_step_px = 0.5 * window.scale  # the size of function step in px
-                x_step = x_step_px * 2 * game.x_edge / graph_width * (1 if game.active_player.left_player else -1)
-                point_list = []
+                translation_y_delta = game.active_player.y \
+                                      - game.formula.evaluate(game.active_player.x * (-1 if shooter_right else 1))
+                point_list = []  # segment points
                 for _ in range(segments_per_tick + 1):
                     # evaluating next point coordinates
                     y_val = game.formula.evaluate(game.formula_current_x) + translation_y_delta
 
-                    point_list.append((window.SCREEN_X_CENTER +
-                                       graph_width / 2 / window.lobby.game.x_edge * game.formula_current_x,
-                                       (self.graph_top_edge + self.graph_bottom_edge) / 2 +
-                                       (self.graph_top_edge - self.graph_bottom_edge) / 2 / window.lobby.game.y_edge * (
-                                           y_val)))
+                    point_list.append((window.SCREEN_X_CENTER + graph_width / 2 / window.lobby.game.x_edge
+                                       * game.formula_current_x * (-1 if shooter_right else 1),
+                                       graph_y_center + graph_height / window.lobby.game.y_edge * y_val)
+                                      )
 
                     # increasing for next step
                     game.formula_current_x += x_step
@@ -574,7 +570,7 @@ class GameView(View):
                 game.formula_segments.append(strip_line)  # adding new segment
 
                 # checking collision with other players or obstacles
-                for point in strip_line.points:
+                for point in point_list:
                     # checking for collision with obstacles:
                     for obstacle_index in range(len(game.obstacles)):
 
@@ -622,7 +618,14 @@ class GameView(View):
         game.formula = None
         game.formula_current_x = None
         game.formula_segments = None
-        self.pass_turn_to_next_player()  # passing turn to the next player
+        if not game.multiplayer:
+            from events import GameEndEvent, ActivePlayerChangeEvent
+            if game.is_game_end():
+                self.game_event_manager.add_local_event(GameEndEvent())
+                self.game_event_manager.execute_events(self)
+                return
+            next_player = game.get_next_player()
+            self.game_event_manager.add_local_event(ActivePlayerChangeEvent(next_player))
 
     def on_draw(self):
         self.clear()
