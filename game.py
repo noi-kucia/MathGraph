@@ -78,7 +78,6 @@ class Game:
         # list of formula segments
         self.formula_segments = shape_list.ShapeElementList()
 
-
     def create_obstacles(self):
         """generates obstacle on server machine using axes units coordinates,
         so these obstacles will be independent of screen resolution and before drawing
@@ -97,7 +96,7 @@ class Game:
                 vertices = random.randint(3, 20)  # quantity of vertices in current polygon
                 # polygons with more vertices normally will be bigger than other
                 max_radius = int(random.uniform(1 * field_height_scale,
-                                                6*field_height_scale + 0.25 * field_height_scale * vertices))
+                                                6 * field_height_scale + 0.25 * field_height_scale * vertices))
 
                 # generating angles as part of 2 Pi radians:
                 angle_sum = 0
@@ -133,8 +132,6 @@ class Game:
                     continue
 
                 # checking for collision with players
-                #TODO: make player_height a parameter of the game so as not to calculate it a thousand times
-                player_height = 0  # height of player in axes units
                 for player in self.all_players:
                     player_polygon = [(player.sprite.center_x - player.sprite.width / 2,  # creating "hitbox" of player
                                        player.sprite.center_y + player.sprite.height / 2),
@@ -274,7 +271,6 @@ class GameView(View):
         window.lobby.game.timer_time = window.lobby.game.max_time_s
         self.timer = Timer(1, self.time_tick)
         self.timer.start()
-
 
     def time_tick(self):
         self.window.lobby.game.timer_time -= 1
@@ -444,10 +440,8 @@ class GameView(View):
             return None  # cannot kill himself
         if not player.alive:
             return None  # cannot kill dead player
-
-        player.sprite.texture = player.texture_left_dead if player.left_player else player.texture_right_dead
+        player.set_dead_texture()
         player.alive = False
-
 
     def game_finish(self):
         from lobby import LobbyView
@@ -579,6 +573,7 @@ class GameView(View):
                 game.formula_segments.append(strip_line)  # adding new segment
 
                 # checking collision with other players or obstacles
+                # TODO: remake collision checker to check whole lines, not just several vertices bc it works really badly
                 for point in point_list:
                     # checking for collision with obstacles:
                     for obstacle_index in range(len(game.obstacles)):
