@@ -28,8 +28,9 @@ if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
 
 
 class Player:
-    texture_left, texture_right = arcade.load_texture_pair('textures/player_sprite.png')
-    texture_left_dead, texture_right_dead = arcade.load_texture_pair('textures/player_sprite_dead.png')
+    __texture_left, __texture_right = arcade.load_texture_pair('textures/player_sprite.png')
+    __texture_left_dead, __texture_right_dead = arcade.load_texture_pair('textures/player_sprite_dead.png')
+    __standard_height = 1.5  # height of the player sprite in axes units for default map size (16 y)
 
     def __init__(self, computer_player: bool = True, client: Client = None, left_player=True, name: str = None):
         self.sprite = None
@@ -47,35 +48,45 @@ class Player:
         # graphic coordinates of player
         self.x = None
         self.y = None
+        self.spawn_hitbox_size = None  # height and weight of square around player sprite which must be free
+
+    def set_dead_texture(self):
+        self.sprite.texture = self.__texture_left_dead if self.left_player else self.__texture_right_dead
+
+    def set_alive_texture(self):
+        self.sprite.texture = self.__texture_left if self.left_player else self.__texture_right
 
     def create_sprite(self, window):
         """this method must be called after creation of the game to create the sprite,
         bc it's coordinates depends on game parameters"""
 
+        game = window.lobby.game
         GRAPH_TOP_EDGE = window.GRAPH_TOP_EDGE
         GRAPH_BOTTOM_EDGE = window.GRAPH_BOTTOM_EDGE
         GRAPH_LEFT_EDGE = int(
-            window.SCREEN_WIDTH - (GRAPH_TOP_EDGE - GRAPH_BOTTOM_EDGE) * window.lobby.game.proportion_x2y) // 2
+            window.SCREEN_WIDTH - (GRAPH_TOP_EDGE - GRAPH_BOTTOM_EDGE) * game.proportion_x2y) // 2
         GRAPH_RIGHT_EDGE = window.SCREEN_WIDTH - GRAPH_LEFT_EDGE
-        player_scale = 0.35
+        self.spawn_hitbox_size = self.__standard_height * (game.y_edge / 16)
+        pixels_per_unit = (GRAPH_RIGHT_EDGE - GRAPH_LEFT_EDGE) / (2 * game.x_edge)
+        player_size_px = self.spawn_hitbox_size * pixels_per_unit
+
         while True:
-            if self.left_player:
-                rand_x = random.randint(
-                    int(GRAPH_LEFT_EDGE + self.texture_left.width * player_scale / 2 * window.scale),
-                    int(window.SCREEN_X_CENTER - self.texture_left.width * player_scale / 2 * window.scale))
-            else:
-                rand_x = random.randint(
-                    int(window.SCREEN_X_CENTER + self.texture_left.width * player_scale / 2 * window.scale),
-                    int(GRAPH_RIGHT_EDGE - self.texture_left.width * player_scale / 2 * window.scale))
-            rand_y = random.randint(int(GRAPH_BOTTOM_EDGE + 10 * window.scale
-                                        + self.texture_left.width * player_scale / 2 * window.scale),
-                                    int(GRAPH_TOP_EDGE - 10 * window.scale
-                                        - self.texture_left.width * player_scale / 2 * window.scale))
-            self.sprite = arcade.Sprite(self.texture_left if self.left_player else self.texture_right,
-                                        scale=player_scale * window.scale, center_x=rand_x, center_y=rand_y)
+            # choosing random x in the right part of the game field so that the sprite will not intersect borders
+            rand_x = random.randint(
+                int(window.SCREEN_X_CENTER + player_size_px / 2 * window.scale),
+                int(GRAPH_RIGHT_EDGE - player_size_px / 2 * window.scale))
+            if self.left_player:  # if player is from the left teem, just subtracting half of the game field width
+                rand_x -= window.SCREEN_X_CENTER-GRAPH_LEFT_EDGE
+
+            rand_y = random.randint(int(GRAPH_BOTTOM_EDGE + 15 * window.scale + player_size_px / 2),
+                                    int(GRAPH_TOP_EDGE - 15 * window.scale - player_size_px / 2))
+
+            sprite_scale = player_size_px / self.__texture_left.height
+            self.sprite = arcade.Sprite(self.__texture_left if self.left_player else self.__texture_right,
+                                        center_x=rand_x, center_y=rand_y, scale=sprite_scale)
             if (not window.lobby.game.players_sprites_list) or \
                     (not arcade.check_for_collision_with_list(self.sprite, window.lobby.game.players_sprites_list)):
-                break
+                break  # repeat until sprite isn't overlapping any other sprite
         self.x = (self.sprite.center_x - window.SCREEN_X_CENTER) * window.lobby.game.x_edge * 2 / (
                 GRAPH_RIGHT_EDGE - GRAPH_LEFT_EDGE)
         self.y = (self.sprite.center_y - (GRAPH_TOP_EDGE + GRAPH_BOTTOM_EDGE) / 2) * window.lobby.game.y_edge * 2 / (
