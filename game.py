@@ -86,6 +86,7 @@ class Game:
         These coordinates are common to all player and provides reference data to calculate
         collision."""
 
+        # TODO: sometimes polygons are generated with small self overlapping
         self.obstacles.clear()  # deleting old obstacles
         max_polygons = int(self.obstacle_frequency * 0.8 * self.proportion_x2y / self._proportion_x2y_max)
         field_height_scale = self.y_edge / 15.  # scale of the field in comparison to standard 15y field
@@ -96,7 +97,7 @@ class Game:
                 vertices = random.randint(3, 20)  # quantity of vertices in current polygon
                 # polygons with more vertices normally will be bigger than other
                 max_radius = int(random.uniform(1 * field_height_scale,
-                                                6 * field_height_scale + 0.25 * field_height_scale * vertices))
+                                                8 * field_height_scale + 0.25 * field_height_scale * vertices))
 
                 # generating angles as part of 2 Pi radians:
                 angle_sum = 0
@@ -106,9 +107,10 @@ class Game:
                     angle_sum += angles[-1]
                 for angle in range(vertices):
                     angles[angle] = angles[angle] / angle_sum
+
                 obstacle = []
-                center_x = random.randint(max_radius - self.x_edge, self.x_edge - max_radius)
-                center_y = random.randint(max_radius - self.y_edge, self.y_edge - max_radius)
+                center_x = random.uniform(max_radius - self.x_edge, self.x_edge - max_radius)
+                center_y = random.uniform(max_radius - self.y_edge, self.y_edge - max_radius)
                 angle = 0
                 last_scale = 0.75
                 for part in angles:
@@ -117,8 +119,8 @@ class Game:
                     scale = (scale + last_scale / 2) * 2 / 3  # making polygon more convex by smoothing angles
                     last_scale = scale
                     obstacle.append(
-                        (int(center_x + scale * max_radius * math.cos(angle)),
-                         int(center_y + scale * max_radius * math.sin(angle))
+                        (center_x + scale * max_radius * math.cos(angle),
+                         center_y + scale * max_radius * math.sin(angle)
                          )
                     )
 
@@ -133,14 +135,14 @@ class Game:
 
                 # checking for collision with players
                 for player in self.all_players:
-                    player_polygon = [(player.sprite.center_x - player.sprite.width / 2,  # creating "hitbox" of player
-                                       player.sprite.center_y + player.sprite.height / 2),
-                                      (player.sprite.center_x + player.sprite.width / 2,
-                                       player.sprite.center_y + player.sprite.height / 2),
-                                      (player.sprite.center_x + player.sprite.width / 2,
-                                       player.sprite.center_y - player.sprite.height / 2),
-                                      (player.sprite.center_x - player.sprite.width / 2,
-                                       player.sprite.center_y - player.sprite.height / 2)]
+                    player_polygon = [(player.x - player.spawn_hitbox_size / 2,  # creating "hitbox" of player
+                                       player.y + player.spawn_hitbox_size / 2),
+                                      (player.x + player.spawn_hitbox_size / 2,
+                                       player.y + player.spawn_hitbox_size / 2),
+                                      (player.x + player.spawn_hitbox_size / 2,
+                                       player.y - player.spawn_hitbox_size / 2),
+                                      (player.x - player.spawn_hitbox_size / 2,
+                                       player.y - player.spawn_hitbox_size / 2)]
                     if geometry.are_polygons_intersecting(player_polygon, obstacle):
                         is_intersecting = True
                         break
@@ -654,11 +656,17 @@ class GameView(View):
         arcade.finish_render()
 
     def create_obstacles_batch(self):
+        """translates from axes units to pixels and creates local batch of obstacle shapes"""
         game = self.window.lobby.game
         self.obstacles_batch = pyglet.graphics.Batch()  # creating new batch
         self.obstacle_body_batch_shapes = []
         self.obstacle_border_batch_shapes = []
+        px_per_unit = self.graph_width / game.x_edge / 2
+
         for polygon in game.obstacles:
+            # translating into pixel units and moving to appropriate position
+            polygon = [(x * px_per_unit + self.graph_x_center, y * px_per_unit + self.graph_y_center) for x, y in polygon]
+
 
             # creating obstacle body from triangles
             triangles = arcade.earclip.earclip(polygon)
@@ -726,8 +734,8 @@ class GameView(View):
         self.game_field_objects.append(
             shape_list.create_rectangle_filled(center_x=int((self.graph_left_edge + self.graph_right_edge) / 2),
                                                center_y=int((self.graph_top_edge + self.graph_bottom_edge) / 2),
-                                               width=self.graph_right_edge - self.graph_left_edge,
-                                               height=self.graph_top_edge - self.graph_bottom_edge,
+                                               width=self.graph_width,
+                                               height=self.graph_height,
                                                color=(11, 1, 18, 200)
                                                )
         )
@@ -735,8 +743,8 @@ class GameView(View):
             shape_list.create_rectangle_outline(
                 center_x=int((self.graph_left_edge + self.graph_right_edge) / 2),
                 center_y=int((self.graph_top_edge + self.graph_bottom_edge) / 2),
-                width=self.graph_right_edge - self.graph_left_edge + 3,
-                height=self.graph_top_edge - self.graph_bottom_edge + 3,
+                width=self.graph_width + 3,
+                height=self.graph_height + 3,
                 color=color.AERO_BLUE, border_width=3
             )
         )
