@@ -21,18 +21,19 @@ import math
 import sys
 import time
 from threading import Timer
-from typing import Tuple, List
+from typing import Tuple
 
 import pyglet.graphics
 
 from UIFixedElements import *
 from arcade import shape_list
-from arcade import gui, geometry, color, load_texture, Text, SpriteList, View, Window, earclip
+from arcade import gui, geometry, color, load_texture, Text, SpriteList, View, Window
 import arcade.types
 from formula import Formula, TranslateError, ArgumentOutOfRange
 from player import Player
 import numpy as np
-import pyclipper  # for clipping obstacles
+import pyclipper
+import tripy
 
 if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
     os.chdir(sys._MEIPASS)
@@ -61,6 +62,7 @@ class Game:
         self.proportion_x2y = proportion_x2y  # height of graph is constant, but width = height*proportion_x2y
         self.y_edge = y_edge  # y value on the edge of graph
         self.x_edge = y_edge * proportion_x2y
+        self.game_field_ratio = 1  # signifies the ratio of the game y axis to standard value (16)
 
         # players initializing
         self.players_sprites_list = SpriteList(use_spatial_hash=True)
@@ -89,15 +91,14 @@ class Game:
         # TODO: sometimes polygons are generated with small self overlapping
         self.obstacles.clear()  # deleting old obstacles
         max_polygons = int(self.obstacle_frequency * 0.8 * self.proportion_x2y / self._proportion_x2y_max)
-        field_height_scale = self.y_edge / 15.  # scale of the field in comparison to standard 15y field
         for i in range(
                 int(max_polygons * (1 + random.uniform(-0.15, 0.15)))):  # creating +-15% from max_polygons times
             """generating new polygon"""
             while True:
                 vertices = random.randint(3, 20)  # quantity of vertices in current polygon
                 # polygons with more vertices normally will be bigger than other
-                max_radius = int(random.uniform(1 * field_height_scale,
-                                                8 * field_height_scale + 0.25 * field_height_scale * vertices))
+                max_radius = int(random.uniform(1 * self.game_field_ratio,
+                                                8 * self.game_field_ratio + 0.25 * self.game_field_ratio * vertices))
 
                 # generating angles as part of 2 Pi radians:
                 angle_sum = 0
@@ -114,7 +115,7 @@ class Game:
                 angle = 0
                 last_scale = 0.75
                 for part in angles:
-                    angle += 2 * math.pi * part
+                    angle -= 2 * math.pi * part
                     scale = random.uniform(0.25, 1)
                     scale = (scale + last_scale / 2) * 2 / 3  # making polygon more convex by smoothing angles
                     last_scale = scale
@@ -159,6 +160,7 @@ class Game:
         self.formula_current_x = None
         self.formula_segments = shape_list.ShapeElementList()
         self.all_players = self.left_team + self.right_team
+        self.game_field_ratio = self.y_edge / 16
 
         # choosing obstacles color
         self.obstacles_color = random.choice(
@@ -240,11 +242,12 @@ class GameView(View):
         self.graph_bottom_edge = window.GRAPH_BOTTOM_EDGE
         self.graph_left_edge = int(
             window.SCREEN_WIDTH - (
-                    self.graph_top_edge - self.graph_bottom_edge) * window.lobby.game.proportion_x2y) // 2
+                    self.graph_top_edge - self.graph_bottom_edge) * self.game.proportion_x2y) // 2
         self.graph_right_edge = window.SCREEN_WIDTH - self.graph_left_edge
 
         self.graph_width = self.graph_right_edge - self.graph_left_edge
         self.graph_height = self.graph_top_edge - self.graph_bottom_edge
+        self.px_per_unit = self.graph_width / self.game.x_edge / 2  # shows how much pixels are in 1 game unit
 
         self.graph_x_center = (self.graph_right_edge + self.graph_left_edge) / 2
         self.graph_y_center = (self.graph_top_edge + self.graph_bottom_edge) / 2
@@ -270,7 +273,7 @@ class GameView(View):
         self.create_obstacles_batch()
 
         # adding thread to timer func
-        window.lobby.game.timer_time = window.lobby.game.max_time_s
+        self.game.timer_time = self.game.max_time_s
         self.timer = Timer(1, self.time_tick)
         self.timer.start()
 
@@ -458,10 +461,17 @@ class GameView(View):
 
         clipper is the polygon of "blow", it's a bit randomized and has given size as radius"""
 
-        window = self.window
-        game = window.lobby.game
-        blow_radius = 25 * window.scale
-        obstacle = window.lobby.game.obstacles[obstacle_index]
+        game = self.game
+        float_precision = 0.01 / game.game_field_ratio  # as pyclipper cannot work on floats, all integers will be
+        # divided by this precision before clipping and all new polygons will be multiplied by it again then
+        blow_radius = 1.5 * game.game_field_ratio / float_precision
+        obstacle = game.obstacles[obstacle_index]
+        obstacle = [(x / float_precision, y / float_precision) for x, y in obstacle]
+
+        # deleting previous obstacle shapes from batch
+        self.obstacle_body_batch_shapes.pop(obstacle_index)
+        self.obstacle_border_batch_shapes.pop(obstacle_index)
+        game.obstacles.pop(obstacle_index)  # deleting old obstacle game object
 
         # generating clipping polygon
         angle_angle_sum = 0
@@ -473,14 +483,15 @@ class GameView(View):
         for angle in range(vertices):
             angles[angle] = angles[angle] / angle_angle_sum
 
-        center_x = point[0]
-        center_y = point[1]
+        center_x = point[0] / float_precision
+        center_y = point[1] / float_precision
         clipper = []
+        angle = 0
         for part in angles:
             angle += 2 * math.pi * part
             clipper.append(
-                (int(center_x + blow_radius * math.cos(angle)),
-                 int(center_y + blow_radius * math.sin(angle))
+                (center_x + blow_radius * math.cos(angle),
+                 center_y + blow_radius * math.sin(angle)
                  )
             )
 
@@ -490,43 +501,18 @@ class GameView(View):
         pc.AddPath(clipper, pyclipper.PT_SUBJECT, True)
         if not pc.Execute(pyclipper.CT_DIFFERENCE):  # if whole clipping polygon is inside subject
             return
-        game.obstacles.pop(obstacle_index)  # deleting old obstacle
         pc.Clear()
         pc.AddPath(obstacle, pyclipper.PT_SUBJECT, True)
         pc.AddPath(clipper, pyclipper.PT_CLIP, True)
         new_obstacles = pc.Execute(pyclipper.CT_DIFFERENCE, pyclipper.PFT_EVENODD)
+
         for obstacle in new_obstacles:
             if not obstacle:
                 continue
-            game.obstacles.append(obstacle)
-
-        # deleting previous obstacle shape from batch
-        self.obstacle_body_batch_shapes.pop(obstacle_index)
-        self.obstacle_border_batch_shapes.pop(obstacle_index)
-
-        # creating new shape
-        for polygon in new_obstacles:
-            if not obstacle:
-                continue
-
-            # creating obstacle body
-            triangles = arcade.earclip.earclip(polygon)
-            obstacle = []
-
-            for tr in triangles:
-                obstacle.append(pyglet.shapes.Triangle(tr[0][0], tr[0][1], tr[1][0], tr[1][1], tr[2][0], tr[2][1],
-                                                       game.obstacles_color, batch=self.obstacles_batch))
-            self.obstacle_body_batch_shapes.append(obstacle)
-
-            # creating obstacle border
-            last_point = polygon[-1]
-            border = []
-            for point in polygon:
-                border.append(pyglet.shapes.Line(last_point[0], last_point[1], point[0], point[1],
-                                                 width=int(2 * self.window.scale),
-                                                 color=game.obstacles_border_color, batch=self.obstacles_batch))
-                last_point = point
-            self.obstacle_border_batch_shapes.append(border)
+            # translating vertices coordinates back to the game units
+            obstacle = [(x * float_precision, y * float_precision) for x, y in obstacle]
+            game.obstacles.append(obstacle)  # adding new obstacle
+            self.add_batch_obstacle(obstacle)  # creating new shapes
 
     def on_update(self, delta_time=1. / 60):
         window = self.window
@@ -559,11 +545,22 @@ class GameView(View):
                 for _ in range(segments_per_tick + 1):
                     # evaluating next point coordinates
                     y_val = game.formula.evaluate(game.formula_current_x) + translation_y_delta
-
                     point_list.append((window.SCREEN_X_CENTER + graph_width / 2 / window.lobby.game.x_edge
                                        * game.formula_current_x * (-1 if shooter_right else 1),
                                        graph_y_center + graph_height / window.lobby.game.y_edge * y_val)
                                       )
+                    # checking for collision with obstacles
+                    # TODO: remake collision checker to check whole lines, not just several vertices bc it works really badly
+                    for obstacle_index in range(len(game.obstacles)):
+                        point = (game.formula_current_x, y_val)
+                        # scaling values because pyclipper cannot work on float units
+                        scale_ratio = 100
+                        scaled_point = (scale_ratio * game.formula_current_x, scale_ratio * y_val)
+                        obstacle = [(x * scale_ratio, y * scale_ratio) for x, y in game.obstacles[obstacle_index]]
+                        if pyclipper.PointInPolygon(scaled_point, obstacle):
+                            self.obstacle_hit(obstacle_index, point)
+                            self.stop_shooting()
+                            return
 
                     # increasing for next step
                     game.formula_current_x += x_step
@@ -574,18 +571,8 @@ class GameView(View):
                                                           line_width=1 * window.scale)
                 game.formula_segments.append(strip_line)  # adding new segment
 
-                # checking collision with other players or obstacles
-                # TODO: remake collision checker to check whole lines, not just several vertices bc it works really badly
+                # checking for collision with players
                 for point in point_list:
-                    # checking for collision with obstacles:
-                    for obstacle_index in range(len(game.obstacles)):
-
-                        if pyclipper.PointInPolygon(point, game.obstacles[obstacle_index]):
-                            self.obstacle_hit(obstacle_index, point)
-                            self.stop_shooting()
-                            return
-
-                    # checking for collision with players
                     collisions = arcade.get_sprites_at_point(point, game.players_sprites_list)
                     if collisions:
                         for player in game.all_players:
@@ -657,34 +644,37 @@ class GameView(View):
 
     def create_obstacles_batch(self):
         """translates from axes units to pixels and creates local batch of obstacle shapes"""
-        game = self.window.lobby.game
         self.obstacles_batch = pyglet.graphics.Batch()  # creating new batch
         self.obstacle_body_batch_shapes = []
         self.obstacle_border_batch_shapes = []
-        px_per_unit = self.graph_width / game.x_edge / 2
+        for polygon in self.game.obstacles:
+            self.add_batch_obstacle(polygon)
 
-        for polygon in game.obstacles:
-            # translating into pixel units and moving to appropriate position
-            polygon = [(x * px_per_unit + self.graph_x_center, y * px_per_unit + self.graph_y_center) for x, y in polygon]
+    def add_batch_obstacle(self, polygon):
+        """Takes a polygon on input in game units,
+         translates to the pixels and adds it to the local obstacle batch. Also creates border for it"""
 
+        obstacle = []
+        border = []
+        # translating into pixel units and moving to appropriate position
+        polygon = [(x * self.px_per_unit + self.graph_x_center, y * self.px_per_unit + self.graph_y_center)
+                   for x, y in polygon]
 
-            # creating obstacle body from triangles
-            triangles = arcade.earclip.earclip(polygon)
-            obstacle = []
-            for tr in triangles:
-                obstacle.append(pyglet.shapes.Triangle(tr[0][0], tr[0][1], tr[1][0], tr[1][1], tr[2][0], tr[2][1],
-                                                       game.obstacles_color, batch=self.obstacles_batch))
-            self.obstacle_body_batch_shapes.append(obstacle)
+        # creating obstacle body from triangles
+        triangles = tripy.earclip(polygon)
+        for tr in triangles:
+            obstacle.append(pyglet.shapes.Triangle(tr[0][0], tr[0][1], tr[1][0], tr[1][1], tr[2][0], tr[2][1],
+                                                   self.game.obstacles_color, batch=self.obstacles_batch))
+        self.obstacle_body_batch_shapes.append(obstacle)
 
-            # creating obstacle border
-            last_point = polygon[-1]
-            border = []
-            for point in polygon:
-                border.append(pyglet.shapes.Line(last_point[0], last_point[1], point[0], point[1],
-                                                 width=int(2 * self.window.scale),
-                                                 color=game.obstacles_border_color, batch=self.obstacles_batch))
-                last_point = point
-            self.obstacle_border_batch_shapes.append(border)
+        # creating obstacle border
+        last_point = polygon[-1]
+        for point in polygon:
+            border.append(pyglet.shapes.Line(last_point[0], last_point[1], point[0], point[1],
+                                             width=int(2 * self.window.scale),
+                                             color=self.game.obstacles_border_color, batch=self.obstacles_batch))
+            last_point = point
+        self.obstacle_border_batch_shapes.append(border)
 
     def obstacles_draw(self):
         batch = self.obstacles_batch
