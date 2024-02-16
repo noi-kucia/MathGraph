@@ -15,7 +15,7 @@ You should have received a copy of the GNU General Public License along with Mat
 If not, see <https://www.gnu.org/licenses/>.
 """
 from abc import ABC, abstractmethod
-from threading import Timer
+from threading import Timer, Thread
 from typing import List
 
 from arcade import shape_list
@@ -62,7 +62,7 @@ class StartFireEvent(GameEvent):
         super().__init__(action="StartFire")
         self.formula = formula
 
-    def get_formula(self)->Formula:
+    def get_formula(self) -> Formula:
         return self.formula
 
 
@@ -137,10 +137,17 @@ class GameEventManager(EventManager):
 
                     self.add_local_event(GameEvent("TimerReset"))  # adding timer reset event to the queue
 
+                    if not game.multiplayer and event.get_player().computer_player:
+                        # starting bot process if next player is bot and game is local
+                        from bot import bot_start_thinking
+                        bot_process = Thread(target=bot_start_thinking, args=(game, view.game_event_manager))
+                        bot_process.daemon = True
+                        bot_process.start()
+
                 case "StartFire":
                     game.formula = event.get_formula()
                     game.shooting = True
-                    game.formula_current_x = game.active_player.x * (-1 if game.active_player in game.right_team else 1)
+                    game.formula_current_x = -abs(game.active_player.x)
                     # starting always from negative x value, bc every team have reversed map, so they are both in the
                     # left part of screen
                     game.formula_segments = shape_list.ShapeElementList()

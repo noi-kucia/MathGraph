@@ -29,6 +29,7 @@ from UIFixedElements import *
 from arcade import shape_list
 from arcade import gui, geometry, color, load_texture, Text, SpriteList, View, Window
 import arcade.types
+
 from formula import Formula, TranslateError, ArgumentOutOfRange
 from player import Player
 import numpy as np
@@ -168,9 +169,6 @@ class Game:
         self.obstacles_color += (60,)
         self.obstacles_border_color = self.obstacles_color + (150,)
 
-        # randomly choosing active player
-        self.active_player = random.choice(self.all_players)
-
         random.shuffle(self.left_team)
         random.shuffle(self.right_team)
         for player in self.right_team:
@@ -268,6 +266,12 @@ class GameView(View):
         from events import GameEventManager
         self.game_event_manager = GameEventManager()
 
+        if not self.game.multiplayer:
+            # randomly choosing active player
+            active_player = random.choice(self.game.all_players)
+            from events import ActivePlayerChangeEvent
+            self.game_event_manager.add_local_event(ActivePlayerChangeEvent(active_player))
+
         # generating obstacles
         self.game.create_obstacles()
         self.create_obstacles_batch()
@@ -321,8 +325,6 @@ class GameView(View):
                                                 texture_pressed=fire_button_texture_pressed,
                                                 texture_disabled=fire_button_texture_disabled, scale=fire_button_scale)
         self.fire_button.on_click = self.fire
-        #  fire button will be disabled if user not currently active
-        self.fire_button.disabled = self.game.active_player.client != self.window.client
 
         # adding exit button
         quit_button_texture = load_texture('textures/LobbyExitButton.png')
@@ -552,10 +554,13 @@ class GameView(View):
                     # checking for collision with obstacles
                     # TODO: remake collision checker to check whole lines, not just several vertices bc it works really badly
                     for obstacle_index in range(len(game.obstacles)):
-                        point = (game.formula_current_x, y_val)
+                        if shooter_right:
+                            point = (-game.formula_current_x, y_val)
+                        else:
+                            point = (game.formula_current_x, y_val)
                         # scaling values because pyclipper cannot work on float units
                         scale_ratio = 100
-                        scaled_point = (scale_ratio * game.formula_current_x, scale_ratio * y_val)
+                        scaled_point = (scale_ratio * point[0], scale_ratio * point[1])
                         obstacle = [(x * scale_ratio, y * scale_ratio) for x, y in game.obstacles[obstacle_index]]
                         if pyclipper.PointInPolygon(scaled_point, obstacle):
                             self.obstacle_hit(obstacle_index, point)
@@ -576,6 +581,8 @@ class GameView(View):
                     collisions = arcade.get_sprites_at_point(point, game.players_sprites_list)
                     if collisions:
                         for player in game.all_players:
+                            if player == game.active_player:
+                                continue
                             if player.sprite == collisions[0]:
                                 active_team = game.left_team if game.active_player in game.left_team else \
                                     game.right_team
@@ -604,7 +611,7 @@ class GameView(View):
                     print('some error occurred!', exception)
 
     def stop_shooting(self):
-        game = self.window.lobby.game
+        game = self.game
         self.on_draw()  # drawing last segment with overlapping
         time.sleep(1 / 60)
         game.shooting = False
