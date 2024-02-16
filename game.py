@@ -692,6 +692,7 @@ class GameView(View):
 
         # drawing nicknames
         for player in (self.window.lobby.game.right_team + self.window.lobby.game.left_team):
+            player.nick.bold = False
             if player == self.window.lobby.game.active_player:
                 player.nick.color = (212, 28, 15)
                 player.nick.bold = True
