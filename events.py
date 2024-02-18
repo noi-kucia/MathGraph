@@ -147,7 +147,8 @@ class GameEventManager(EventManager):
                 case "StartFire":
                     game.formula = event.get_formula()
                     game.shooting = True
-                    game.formula_current_x = -abs(game.active_player.x)
+                    game.formula_current_x = game.active_player.x
+                    view.translation_y_delta = game.active_player.y - game.formula.evaluate(game.active_player.x)
                     # starting always from negative x value, bc every team have reversed map, so they are both in the
                     # left part of screen
                     game.formula_segments = shape_list.ShapeElementList()
