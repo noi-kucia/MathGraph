@@ -22,6 +22,10 @@ from lobby import Lobby
 from player import Player
 
 
+def exit_game(event):
+    arcade.exit()
+
+
 class MenuView(View):
 
     def __init__(self, window):
@@ -58,7 +62,7 @@ class MenuView(View):
         multiplayer_button.on_click = self.multiplayer_game_start
         quit_button = FixedUITextureButton(texture_hovered=exit_texture_hover,
                                            texture=exit_texture, size_hint=(1, 0.32))
-        quit_button.on_click = self.exit_game
+        quit_button.on_click = exit_game
         self.settings_button = FixedUITextureButton(texture_hovered=settings_texture_hover,
                                                     texture=settings_texture, size_hint=(1, 0.32))
         self.settings_button.on_click = self.settings
@@ -111,35 +115,35 @@ class MenuView(View):
         arcade.finish_render()
 
     def avatar_draw(self):
-        avatar_box_textrue = load_texture('textures/AvatarBox_menu.png')
+        avatar_box_texture = load_texture('textures/AvatarBox_menu.png')
         avatar_box_scale = 0.22 * self.window.scale
-        avatar_center_x = int(self.window.width - avatar_box_textrue.width * avatar_box_scale) + int(
-            avatar_box_textrue.width * avatar_box_scale / 2)
-        avatar_center_y = int(self.window.height - avatar_box_textrue.height * avatar_box_scale) + int(
-            avatar_box_textrue.height * avatar_box_scale / 2)
+        avatar_center_x = int(self.window.width - avatar_box_texture.width * avatar_box_scale) + int(
+            avatar_box_texture.width * avatar_box_scale / 2)
+        avatar_center_y = int(self.window.height - avatar_box_texture.height * avatar_box_scale) + int(
+            avatar_box_texture.height * avatar_box_scale / 2)
 
         # drawing avatar
         avatar = self.window.client.avatar
         arcade.draw_texture_rectangle(texture=avatar, center_x=avatar_center_x, center_y=avatar_center_y,
-                                      height=int(0.9 * avatar_box_textrue.height * avatar_box_scale),
-                                      width=int(0.9 * avatar_box_textrue.height * avatar_box_scale))
+                                      height=int(0.9 * avatar_box_texture.height * avatar_box_scale),
+                                      width=int(0.9 * avatar_box_texture.height * avatar_box_scale))
         # drawing hud
         arcade.draw_texture_rectangle(center_x=avatar_center_x, center_y=avatar_center_y,
-                                      width=int(avatar_box_textrue.width * avatar_box_scale),
-                                      height=int(avatar_box_textrue.height * avatar_box_scale),
-                                      texture=avatar_box_textrue)
+                                      width=int(avatar_box_texture.width * avatar_box_scale),
+                                      height=int(avatar_box_texture.height * avatar_box_scale),
+                                      texture=avatar_box_texture)
 
         nick_box_texture = load_texture('textures/NickBox_menu.png')
         nick_center_x = int(self.window.width - nick_box_texture.width * avatar_box_scale + int(
             nick_box_texture.width * avatar_box_scale / 2))
-        nick_center_y = int(self.window.height - (nick_box_texture.height + avatar_box_textrue.height)
+        nick_center_y = int(self.window.height - (nick_box_texture.height + avatar_box_texture.height)
                             * avatar_box_scale) + int(nick_box_texture.height * avatar_box_scale / 2)
         arcade.draw_texture_rectangle(nick_center_x, nick_center_y,
                                       int(nick_box_texture.width * avatar_box_scale),
                                       int(nick_box_texture.height * avatar_box_scale), texture=nick_box_texture)
         # drawing nick
         arcade.Text(text=self.window.client.name, multiline=False, bold=True, color=(10, 242, 255),
-                    start_x=int(self.window.width - avatar_box_textrue.width * avatar_box_scale / 2),
+                    start_x=int(self.window.width - avatar_box_texture.width * avatar_box_scale / 2),
                     start_y=nick_center_y + int(0.12 * self.window.scale * nick_box_texture.height * avatar_box_scale),
                     anchor_y='center', anchor_x='center', font_size=int(24 * self.window.scale)).draw()
 
@@ -150,6 +154,3 @@ class MenuView(View):
     def on_hide_view(self):
         # Disable UIManager when view gets inactive
         self.manager.disable()
-
-    def exit_game(self, event):
-        arcade.exit()

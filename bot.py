@@ -14,6 +14,7 @@ See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with MathGraph.
 If not, see <https://www.gnu.org/licenses/>.
 """
+
 import random
 from time import sleep
 from formula import Formula
@@ -34,6 +35,7 @@ def bot_start_thinking(game: Game, game_event_manager):
 def generate_function(game: Game) -> Formula:
     """Takes game object as input and somehow calculates formula for
     currently active player. Takes list of obstacles from game.obstacles """
-    formula = random.choice(["3 cos (5x) / x",' sin x','5','x','abs(x)','-x','exp(0.01x)','x%3','(tan x) / 1000',
-                             '2sin (x) - (2sin(x)%0.5)'])
+    formula = random.choice(
+        ["3 cos (5x) / x", ' sin x', '5', 'x', 'abs(x)', '-x', 'exp(0.01x)', 'x%3', '(tan x) / 1000',
+         '2sin (x) - (2sin(x)%0.5)'])
     return Formula(formula)
