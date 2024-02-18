@@ -24,6 +24,7 @@ from threading import Timer
 from typing import Tuple
 
 import pyglet.graphics
+import shapely
 
 from UIFixedElements import *
 from arcade import shape_list
@@ -35,6 +36,7 @@ from player import Player
 import numpy as np
 import pyclipper
 import tripy
+from shapely import Point, Polygon, LineString
 
 if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
     os.chdir(sys._MEIPASS)
@@ -136,6 +138,7 @@ class Game:
                     continue
 
                 # checking for collision with players
+                # TODO: use shapely.geometry.box()
                 for player in self.all_players:
                     player_polygon = [(player.x - player.spawn_hitbox_size / 2,  # creating "hitbox" of player
                                        player.y + player.spawn_hitbox_size / 2),
@@ -218,6 +221,7 @@ class GameView(View):
 
     def __init__(self, window: Window):
         super().__init__(window)
+        self.translation_y_delta = None
         self.obstacle_border_batch_shapes = None
         self.obstacles_batch: pyglet.graphics.Batch() = None
         self.obstacle_body_batch_shapes = None
@@ -455,7 +459,7 @@ class GameView(View):
         view = LobbyView(self.window)
         self.window.show_view(view)
 
-    def obstacle_hit(self, obstacle_index, point: Tuple):
+    def obstacle_hit(self, obstacle_index, point: Point):
         """This method takes obstacle index from game.obstacles
         list and clipping it, making blow effect. It works using
         pyclipper library and there is no documentation at all, so
@@ -485,8 +489,8 @@ class GameView(View):
         for angle in range(vertices):
             angles[angle] = angles[angle] / angle_angle_sum
 
-        center_x = point[0] / float_precision
-        center_y = point[1] / float_precision
+        center_x = point.x / float_precision
+        center_y = point.y / float_precision
         clipper = []
         angle = 0
         for part in angles:
@@ -527,72 +531,61 @@ class GameView(View):
             print(e)
 
         if game.shooting:
-            # calculation few next segments of graphic
-            shooter_right: bool = game.active_player in game.right_team  # if shooter is from right team, mirroring
-            # his function to start from the right side
-            graph_left_edge = int(
-                window.SCREEN_WIDTH - (self.graph_top_edge - self.graph_bottom_edge) * game.proportion_x2y) // 2
-            graph_right_edge = window.SCREEN_WIDTH - graph_left_edge
-            graph_width = (graph_right_edge - graph_left_edge)
+            """when the game shooting event is active, a part of the formula is drawn each frame.
+            This process is local to performance needs and to alleviate server's load,
+            so may vary a bit if players have  different screen resolutions.
+            
+            Then, if the game is multiplayer, a server will send its version of the  result of the shoot like who 
+            was killed, which obstacles have been damaged and so on"""
 
-            segments_per_tick = int(12 * self.window.scale)  # sets the speed of function drawing (segments per frame)
-            x_step_px = 0.5 * window.scale  # the size of function segment in pixels
-            x_step = x_step_px * 2 * game.x_edge / graph_width
-            graph_y_center = (self.graph_top_edge + self.graph_bottom_edge) / 2
-            graph_height = (self.graph_top_edge - self.graph_bottom_edge) / 2
+            shooter_right: bool = game.active_player in game.right_team
+            segments_per_frame = int(12 * self.window.scale)
+            x_step_px = 0.5 * window.scale
+            x_step = x_step_px / self.px_per_unit * (-1 if shooter_right else 1)  # step in axis units ( regards the sign )
+            point_list = []
+
             try:
-                translation_y_delta = game.active_player.y \
-                                      - game.formula.evaluate(game.active_player.x * (-1 if shooter_right else 1))
-                point_list = []  # segment points
-                for _ in range(segments_per_tick + 1):
-                    # evaluating next point coordinates
-                    y_val = game.formula.evaluate(game.formula_current_x) + translation_y_delta
-                    point_list.append((window.SCREEN_X_CENTER + graph_width / 2 / window.lobby.game.x_edge
-                                       * game.formula_current_x * (-1 if shooter_right else 1),
-                                       graph_y_center + graph_height / window.lobby.game.y_edge * y_val)
-                                      )
-                    # checking for collision with obstacles
-                    # TODO: remake collision checker to check whole lines, not just several vertices bc it works really badly
-                    for obstacle_index in range(len(game.obstacles)):
-                        if shooter_right:
-                            point = (-game.formula_current_x, y_val)
-                        else:
-                            point = (game.formula_current_x, y_val)
-                        # scaling values because pyclipper cannot work on float units
-                        scale_ratio = 100
-                        scaled_point = (scale_ratio * point[0], scale_ratio * point[1])
-                        obstacle = [(x * scale_ratio, y * scale_ratio) for x, y in game.obstacles[obstacle_index]]
-                        if pyclipper.PointInPolygon(scaled_point, obstacle):
-                            self.obstacle_hit(obstacle_index, point)
-                            self.stop_shooting()
-                            return
-
-                    # increasing for next step
+                # evaluating the coordinates of segment points
+                for _ in range(segments_per_frame + 1):
+                    point_y = game.formula.evaluate(game.formula_current_x) + self.translation_y_delta
+                    point_list.append((game.formula_current_x, point_y))
                     game.formula_current_x += x_step
+                game.formula_current_x -= x_step  # decreasing the value, as it was increased 1 more time at the end of segment
 
-                game.formula_current_x -= x_step
+                # translating and adding this segment to the screen to be drawn
+                screen_points = [(self.graph_x_center + self.px_per_unit * x, self.graph_y_center + self.px_per_unit * y) for x, y in point_list]
+                game.formula_segments.append(shape_list.create_line_strip(point_list=screen_points, color=color.RED,
+                                                                          line_width=1 * window.scale))
 
-                strip_line = shape_list.create_line_strip(point_list=point_list, color=color.RED,
-                                                          line_width=1 * window.scale)
-                game.formula_segments.append(strip_line)  # adding new segment
+                # checking for collision with obstacles
+                for obstacle_index in range(len(game.obstacles)):
+                    segment = LineString(point_list)
+                    obstacle = Polygon(game.obstacles[obstacle_index])
+                    intersections = segment.intersection(obstacle)
+                    if intersections:
+                        print(intersections)
+                        first_collision_point = Point(intersections.coords[-1] if shooter_right else intersections.coords[0])
+                        self.obstacle_hit(obstacle_index, first_collision_point)
+                        self.stop_shooting()
+                        return
 
                 # checking for collision with players
-                for point in point_list:
-                    collisions = arcade.get_sprites_at_point(point, game.players_sprites_list)
-                    if collisions:
-                        for player in game.all_players:
-                            if player == game.active_player:
-                                continue
-                            if player.sprite == collisions[0]:
-                                active_team = game.left_team if game.active_player in game.left_team else \
-                                    game.right_team
-                                if player in active_team and not game.friendly_fire:
-                                    return
-                                self.kill_player(player)
-                                break
+                # for point in point_list:
+                #     collisions = arcade.get_sprites_at_point(point, game.players_sprites_list)
+                #     if collisions:
+                #         for player in game.all_players:
+                #             if player == game.active_player:
+                #                 continue
+                #             if player.sprite == collisions[0]:
+                #                 active_team = game.left_team if game.active_player in game.left_team else \
+                #                     game.right_team
+                #                 if player in active_team and not game.friendly_fire:
+                #                     return
+                #                 self.kill_player(player)
+                #                 break
 
                 # checking for crossing over vertical borders
-                if point_list[-1][1] >= self.graph_top_edge or point_list[-1][1] <= self.graph_bottom_edge:
+                if abs(point_list[-1][1]) >= game.y_edge:
                     self.stop_shooting()
                     return
 
