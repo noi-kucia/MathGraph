@@ -85,7 +85,7 @@ class EventManager(ABC):
         override this function in dependence of events type"""
         pass
 
-    def dispatchEvent(event: GameEvent, game: Game):
+    def dispatchEvent(self, event: GameEvent, game: Game):
         """dispatches some event to the dedicated server
         in development
         """
@@ -149,8 +149,6 @@ class GameEventManager(EventManager):
                     game.shooting = True
                     game.formula_current_x = game.active_player.x
                     view.translation_y_delta = game.active_player.y - game.formula.evaluate(game.active_player.x)
-                    # starting always from negative x value, bc every team have reversed map, so they are both in the
-                    # left part of screen
                     game.formula_segments = shape_list.ShapeElementList()
 
                 case "TimerReset":
