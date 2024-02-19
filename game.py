@@ -21,10 +21,8 @@ import math
 import sys
 import time
 from threading import Timer
-from typing import Tuple
 
 import pyglet.graphics
-import shapely
 
 from UIFixedElements import *
 from arcade import shape_list
@@ -563,8 +561,22 @@ class GameView(View):
                     obstacle = Polygon(game.obstacles[obstacle_index])
                     intersections = segment.intersection(obstacle)
                     if intersections:
-                        print(intersections)
-                        first_collision_point = Point(intersections.coords[-1] if shooter_right else intersections.coords[0])
+                        first_collision_point = None
+                        match intersections.geom_type:
+                            case 'LineString':
+                                first_collision_point = Point(intersections.coords[-1] if shooter_right else intersections.coords[0])
+                            case 'MultiLineString':
+                                for line in intersections.geoms:
+                                    if not first_collision_point:
+                                        first_collision_point = Point(line.coords[-1] if shooter_right else line.coords[0])
+                                    elif shooter_right and line.coords[-1][0] > first_collision_point.x:
+                                        first_collision_point = Point(line.coords[-1])
+                                    elif not shooter_right and line.coords[0][0] < first_collision_point.x:
+                                        first_collision_point = Point(line.coords[0])
+                            case 'Point':
+                                first_collision_point = intersections
+                            case _:
+                                print('\n\nunknown geometry: ', _)
                         self.obstacle_hit(obstacle_index, first_collision_point)
                         self.stop_shooting()
                         return
