@@ -20,6 +20,7 @@ import random
 import sys
 
 import arcade
+import shapely
 
 from client import Client
 
@@ -36,6 +37,7 @@ class Player:
         self.sprite = None
         self.nick = None
         self.alive = True
+        self.hitbox = None  # contains the hitbox shapely object, used to calculate collision
         self.computer_player = computer_player
         self.left_player = left_player
         # keep player Client object with all information about user to display
@@ -45,10 +47,9 @@ class Player:
             self.client = Client()
             if name:
                 self.client.name = name
-        # graphic coordinates of player
         self.x = None
         self.y = None
-        self.spawn_hitbox_size = None  # height and weight of square around player sprite which must be free
+        self.player_size = None  # height and weight of square around player sprite
 
     def set_dead_texture(self):
         self.sprite.texture = self.__texture_left_dead if self.left_player else self.__texture_right_dead
@@ -56,46 +57,36 @@ class Player:
     def set_alive_texture(self):
         self.sprite.texture = self.__texture_left if self.left_player else self.__texture_right
 
-    def create_sprite(self, window):
-        """this method must be called after creation of the game to create the sprite,
-        bc it's coordinates depends on game parameters"""
+    def create_sprite(self, view):
+        """this method must be called after creation of the game to create the sprite and hitbox,
+        because their coordinates depends on game parameters.
 
-        game = window.lobby.game
-        GRAPH_TOP_EDGE = window.GRAPH_TOP_EDGE
-        GRAPH_BOTTOM_EDGE = window.GRAPH_BOTTOM_EDGE
-        GRAPH_LEFT_EDGE = int(
-            window.SCREEN_WIDTH - (GRAPH_TOP_EDGE - GRAPH_BOTTOM_EDGE) * game.proportion_x2y) // 2
-        GRAPH_RIGHT_EDGE = window.SCREEN_WIDTH - GRAPH_LEFT_EDGE
-        self.spawn_hitbox_size = self.__standard_height * (game.y_edge / 16)
-        pixels_per_unit = (GRAPH_RIGHT_EDGE - GRAPH_LEFT_EDGE) / (2 * game.x_edge)
-        player_size_px = self.spawn_hitbox_size * pixels_per_unit
+        Does not check for collision with obstacles, so must be called before obstacle creation"""
+
+        game = view.game
+        self.player_size = self.__standard_height * game.game_field_ratio
 
         while True:
-            # choosing random x in the right part of the game field so that the sprite will not intersect borders
-            rand_x = random.randint(
-                int(window.SCREEN_X_CENTER + player_size_px / 2 * window.scale),
-                int(GRAPH_RIGHT_EDGE - player_size_px / 2 * window.scale))
-            if self.left_player:  # if player is from the left teem, just subtracting half of the game field width
-                rand_x -= window.SCREEN_X_CENTER-GRAPH_LEFT_EDGE
+            # generating position and sprite
+            self.x = random.uniform(self.player_size, game.x_edge - self.player_size)
+            self.y = random.uniform(-game.y_edge + self.player_size, game.y_edge - self.player_size)
+            if self.left_player:  # if player is from the left teem, just shifting him to the left side
+                self.x -= game.x_edge
 
-            rand_y = random.randint(int(GRAPH_BOTTOM_EDGE + 15 * window.scale + player_size_px / 2),
-                                    int(GRAPH_TOP_EDGE - 15 * window.scale - player_size_px / 2))
-
-            sprite_scale = player_size_px / self.__texture_left.height
             self.sprite = arcade.Sprite(self.__texture_left if self.left_player else self.__texture_right,
-                                        center_x=rand_x, center_y=rand_y, scale=sprite_scale)
-            if (not window.lobby.game.players_sprites_list) or \
-                    (not arcade.check_for_collision_with_list(self.sprite, window.lobby.game.players_sprites_list)):
+                                        center_x=self.x * view.px_per_unit + view.graph_x_center,
+                                        center_y=self.y * view.px_per_unit + view.graph_y_center,
+                                        scale=self.player_size * view.px_per_unit / self.__texture_left.height)
+            if (not game.players_sprites_list) or \
+                    (not arcade.check_for_collision_with_list(self.sprite, game.players_sprites_list)):
                 break  # repeat until sprite isn't overlapping any other sprite
-        self.x = (self.sprite.center_x - window.SCREEN_X_CENTER) * window.lobby.game.x_edge * 2 / (
-                GRAPH_RIGHT_EDGE - GRAPH_LEFT_EDGE)
-        self.y = (self.sprite.center_y - (GRAPH_TOP_EDGE + GRAPH_BOTTOM_EDGE) / 2) * window.lobby.game.y_edge * 2 / (
-                GRAPH_TOP_EDGE - GRAPH_BOTTOM_EDGE)
 
-        window.lobby.game.players_sprites_list.append(self.sprite)
-        window.lobby.game.players_sprites_list.initialize()  # to avoid lags during first drawing
+        game.players_sprites_list.append(self.sprite)
+
+        # creating hitbox
+        self.hitbox = shapely.Point(self.x, self.y).buffer(self.player_size / 2 * 0.9)  # circular polygon
 
         # adding nick text object only once here
-        self.nick = arcade.Text(self.client.name, start_x=self.sprite.center_x,
-                                start_y=self.sprite.bottom, anchor_y='top', anchor_x='center',
-                                font_size=int(14 * window.scale), color=arcade.color.WHITE)
+        self.nick = arcade.Text(self.client.name, start_x=self.sprite.center_x, start_y=self.sprite.bottom,
+                                anchor_y='top', anchor_x='center', font_size=int(14 * view.window.scale),
+                                color=arcade.color.WHITE)

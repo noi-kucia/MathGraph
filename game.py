@@ -89,7 +89,6 @@ class Game:
         These coordinates are common to all player and provides reference data to calculate
         collision."""
 
-        # TODO: sometimes polygons are generated with small self overlapping
         self.obstacles.clear()  # deleting old obstacles
         max_polygons = int(self.obstacle_frequency * 0.8 * self.proportion_x2y / self._proportion_x2y_max)
         for i in range(
@@ -138,14 +137,14 @@ class Game:
                 # checking for collision with players
                 # TODO: use shapely.geometry.box()
                 for player in self.all_players:
-                    player_polygon = [(player.x - player.spawn_hitbox_size / 2,  # creating "hitbox" of player
-                                       player.y + player.spawn_hitbox_size / 2),
-                                      (player.x + player.spawn_hitbox_size / 2,
-                                       player.y + player.spawn_hitbox_size / 2),
-                                      (player.x + player.spawn_hitbox_size / 2,
-                                       player.y - player.spawn_hitbox_size / 2),
-                                      (player.x - player.spawn_hitbox_size / 2,
-                                       player.y - player.spawn_hitbox_size / 2)]
+                    player_polygon = [(player.x - player.player_size / 2,  # creating "hitbox" of player
+                                       player.y + player.player_size / 2),
+                                      (player.x + player.player_size / 2,
+                                       player.y + player.player_size / 2),
+                                      (player.x + player.player_size / 2,
+                                       player.y - player.player_size / 2),
+                                      (player.x - player.player_size / 2,
+                                       player.y - player.player_size / 2)]
                     if geometry.are_polygons_intersecting(player_polygon, obstacle):
                         is_intersecting = True
                         break
@@ -233,9 +232,6 @@ class GameView(View):
 
         self.game = window.lobby.game
 
-        # creating sprites of players
-        for player in window.lobby.game.all_players:
-            player.create_sprite(self.window)
 
         # graph edges coordinates
         self.graph_top_edge = window.GRAPH_TOP_EDGE
@@ -259,6 +255,10 @@ class GameView(View):
 
         # to keep text objects
         self.text_to_draw = []
+
+        # creating sprites of players
+        for player in self.game.all_players:
+            player.create_sprite(self)
 
         # adding UI
         self.manager = gui.UIManager()  # for all gui elements
@@ -284,7 +284,7 @@ class GameView(View):
         self.timer.start()
 
     def time_tick(self):
-        self.window.lobby.game.timer_time -= 1
+        self.game.timer_time -= 1
         self.timer = Timer(1, self.time_tick)
         self.timer.start()
 
@@ -453,6 +453,7 @@ class GameView(View):
         player.alive = False
 
     def game_finish(self):
+        self.timer.cancel()
         from lobby import LobbyView
         view = LobbyView(self.window)
         self.window.show_view(view)
@@ -548,6 +549,7 @@ class GameView(View):
                     point_y = game.formula.evaluate(game.formula_current_x) + self.translation_y_delta
                     point_list.append((game.formula_current_x, point_y))
                     game.formula_current_x += x_step
+                segment = LineString(point_list)
                 game.formula_current_x -= x_step  # decreasing the value, as it was increased 1 more time at the end of segment
 
                 # translating and adding this segment to the screen to be drawn
@@ -557,7 +559,6 @@ class GameView(View):
 
                 # checking for collision with obstacles
                 for obstacle_index in range(len(game.obstacles)):
-                    segment = LineString(point_list)
                     obstacle = Polygon(game.obstacles[obstacle_index])
                     intersections = segment.intersection(obstacle)
                     if intersections:
@@ -582,19 +583,15 @@ class GameView(View):
                         return
 
                 # checking for collision with players
-                # for point in point_list:
-                #     collisions = arcade.get_sprites_at_point(point, game.players_sprites_list)
-                #     if collisions:
-                #         for player in game.all_players:
-                #             if player == game.active_player:
-                #                 continue
-                #             if player.sprite == collisions[0]:
-                #                 active_team = game.left_team if game.active_player in game.left_team else \
-                #                     game.right_team
-                #                 if player in active_team and not game.friendly_fire:
-                #                     return
-                #                 self.kill_player(player)
-                #                 break
+                active_team = game.left_team if game.active_player in game.left_team else game.right_team
+                for player in game.all_players:
+                    if player == game.active_player:
+                        continue
+                    if player in active_team and not game.friendly_fire :
+                        continue
+                    if segment.intersects(player.hitbox):
+                        self.kill_player(player)
+                        continue
 
                 # checking for crossing over vertical borders
                 if abs(point_list[-1][1]) >= game.y_edge:
@@ -693,12 +690,13 @@ class GameView(View):
         batch.draw()
 
     def players_draw(self):
-        self.window.lobby.game.players_sprites_list.draw()
+        game = self.game
+        game.players_sprites_list.draw()
 
         # drawing nicknames
-        for player in (self.window.lobby.game.right_team + self.window.lobby.game.left_team):
+        for player in (game.right_team + game.left_team):
             player.nick.bold = False
-            if player == self.window.lobby.game.active_player:
+            if player == game.active_player:
                 player.nick.color = (212, 28, 15)
                 player.nick.bold = True
             elif not player.alive:
@@ -706,6 +704,12 @@ class GameView(View):
             else:
                 player.nick.color = (255, 255, 255)
             player.nick.draw()
+
+            # ### hitbox drawing
+            # center_x = player.x * self.px_per_unit + self.graph_x_center
+            # center_y = player.y * self.px_per_unit + self.graph_y_center
+            # radius = player.player_size*0.9/2 * self.px_per_unit
+            # arcade.draw_circle_filled(center_x, center_y, radius, (255, 0, 0, 200))
 
     def draw_formula(self):
         self.window.lobby.game.formula_segments.draw()
