@@ -109,7 +109,7 @@ class Game:
                 for angle in range(vertices):
                     angles[angle] = angles[angle] / angle_sum
 
-                obstacle = []
+                point_list = []
                 center_x = random.uniform(max_radius - self.x_edge, self.x_edge - max_radius)
                 center_y = random.uniform(max_radius - self.y_edge, self.y_edge - max_radius)
                 angle = 0
@@ -119,16 +119,17 @@ class Game:
                     scale = random.uniform(0.25, 1)
                     scale = (scale + last_scale / 2) * 2 / 3  # making polygon more convex by smoothing angles
                     last_scale = scale
-                    obstacle.append(
+                    point_list.append(
                         (center_x + scale * max_radius * math.cos(angle),
                          center_y + scale * max_radius * math.sin(angle)
                          )
                     )
+                polygon = Polygon(point_list)
 
                 # checking polygon for collision with other obstacles
                 is_intersecting = False
-                for polygon in self.obstacles:
-                    if geometry.are_polygons_intersecting(polygon, obstacle):
+                for obstacle in self.obstacles:
+                    if polygon.intersects(obstacle):
                         is_intersecting = True
                         break
                 if is_intersecting:
@@ -137,21 +138,21 @@ class Game:
                 # checking for collision with players
                 # TODO: use shapely.geometry.box()
                 for player in self.all_players:
-                    player_polygon = [(player.x - player.player_size / 2,  # creating "hitbox" of player
+                    player_polygon = Polygon([(player.x - player.player_size / 2,  # creating "hitbox" of player
                                        player.y + player.player_size / 2),
                                       (player.x + player.player_size / 2,
                                        player.y + player.player_size / 2),
                                       (player.x + player.player_size / 2,
                                        player.y - player.player_size / 2),
                                       (player.x - player.player_size / 2,
-                                       player.y - player.player_size / 2)]
-                    if geometry.are_polygons_intersecting(player_polygon, obstacle):
+                                       player.y - player.player_size / 2)])
+                    if player_polygon.intersects(polygon):
                         is_intersecting = True
                         break
                 if is_intersecting:
                     continue
                 break
-            self.obstacles.append(obstacle)
+            self.obstacles.append(polygon)
 
     def prepare(self):
         self.timer_time = self.max_time_s
@@ -665,9 +666,10 @@ class GameView(View):
 
         obstacle = []
         border = []
+
         # translating into pixel units and moving to appropriate position
         polygon = [(x * self.px_per_unit + self.graph_x_center, y * self.px_per_unit + self.graph_y_center)
-                   for x, y in polygon]
+                   for x, y in polygon.exterior.coords]
 
         # creating obstacle body from triangles
         triangles = tripy.earclip(polygon)
