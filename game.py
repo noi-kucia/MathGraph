@@ -23,16 +23,16 @@ import time
 from threading import Timer
 
 import pyglet.graphics
+import shapely
 
 from UIFixedElements import *
 from arcade import shape_list
-from arcade import gui, geometry, color, load_texture, Text, SpriteList, View, Window
+from arcade import gui, color, load_texture, Text, SpriteList, View, Window
 import arcade.types
 
 from formula import Formula, TranslateError, ArgumentOutOfRange
 from player import Player
 import numpy as np
-import pyclipper
 import tripy
 from shapely import Point, Polygon, LineString
 
@@ -136,16 +136,11 @@ class Game:
                     continue
 
                 # checking for collision with players
-                # TODO: use shapely.geometry.box()
                 for player in self.all_players:
-                    player_polygon = Polygon([(player.x - player.player_size / 2,  # creating "hitbox" of player
-                                       player.y + player.player_size / 2),
-                                      (player.x + player.player_size / 2,
-                                       player.y + player.player_size / 2),
-                                      (player.x + player.player_size / 2,
-                                       player.y - player.player_size / 2),
-                                      (player.x - player.player_size / 2,
-                                       player.y - player.player_size / 2)])
+                    player_polygon = shapely.geometry.box(
+                        player.x - player.player_size / 2, player.y - player.player_size / 2,
+                        player.x + player.player_size / 2, player.y + player.player_size / 2
+                    )
                     if player_polygon.intersects(polygon):
                         is_intersecting = True
                         break
@@ -232,7 +227,6 @@ class GameView(View):
             raise Exception
 
         self.game = window.lobby.game
-
 
         # graph edges coordinates
         self.graph_top_edge = window.GRAPH_TOP_EDGE
@@ -534,7 +528,8 @@ class GameView(View):
             shooter_right: bool = game.active_player in game.right_team
             segments_per_frame = int(12 * self.window.scale)
             x_step_px = 0.5 * window.scale
-            x_step = x_step_px / self.px_per_unit * (-1 if shooter_right else 1)  # step in axis units ( regards the sign )
+            x_step = x_step_px / self.px_per_unit * (
+                -1 if shooter_right else 1)  # step in axis units ( regards the sign )
             point_list = []
 
             try:
@@ -547,7 +542,9 @@ class GameView(View):
                 game.formula_current_x -= x_step  # decreasing the value, as it was increased 1 more time at the end of segment
 
                 # translating and adding this segment to the screen to be drawn
-                screen_points = [(self.graph_x_center + self.px_per_unit * x, self.graph_y_center + self.px_per_unit * y) for x, y in point_list]
+                screen_points = [
+                    (self.graph_x_center + self.px_per_unit * x, self.graph_y_center + self.px_per_unit * y) for x, y in
+                    point_list]
                 game.formula_segments.append(shape_list.create_line_strip(point_list=screen_points, color=color.RED,
                                                                           line_width=1 * window.scale))
 
@@ -558,11 +555,13 @@ class GameView(View):
                         first_collision_point = None
                         match intersections.geom_type:
                             case 'LineString':
-                                first_collision_point = Point(intersections.coords[-1] if shooter_right else intersections.coords[0])
+                                first_collision_point = Point(
+                                    intersections.coords[-1] if shooter_right else intersections.coords[0])
                             case 'MultiLineString':
                                 for line in intersections.geoms:
                                     if not first_collision_point:
-                                        first_collision_point = Point(line.coords[-1] if shooter_right else line.coords[0])
+                                        first_collision_point = Point(
+                                            line.coords[-1] if shooter_right else line.coords[0])
                                     elif shooter_right and line.coords[-1][0] > first_collision_point.x:
                                         first_collision_point = Point(line.coords[-1])
                                     elif not shooter_right and line.coords[0][0] < first_collision_point.x:
@@ -580,7 +579,7 @@ class GameView(View):
                 for player in game.all_players:
                     if player == game.active_player:
                         continue
-                    if player in active_team and not game.friendly_fire :
+                    if player in active_team and not game.friendly_fire:
                         continue
                     if segment.intersects(player.hitbox):
                         self.kill_player(player)
