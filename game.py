@@ -468,11 +468,8 @@ class GameView(View):
         clipper is the polygon of "blow", it's a bit randomized and has given size as radius"""
 
         game = self.game
-        float_precision = 0.01 / game.game_field_ratio  # as pyclipper cannot work on floats, all integers will be
-        # divided by this precision before clipping and all new polygons will be multiplied by it again then
-        blow_radius = 1.5 * game.game_field_ratio / float_precision
-        obstacle = game.obstacles[obstacle_index]
-        obstacle = [(x / float_precision, y / float_precision) for x, y in obstacle]
+        blow_radius = 1.35 * game.game_field_ratio
+        obstacle = game.obstacles[obstacle_index]  # shapely Polygon object
 
         # deleting previous obstacle shapes from batch
         self.obstacle_body_batch_shapes.pop(obstacle_index)
@@ -489,36 +486,32 @@ class GameView(View):
         for angle in range(vertices):
             angles[angle] = angles[angle] / angle_angle_sum
 
-        center_x = point.x / float_precision
-        center_y = point.y / float_precision
-        clipper = []
+        clipper_points = []
         angle = 0
         for part in angles:
             angle += 2 * math.pi * part
-            clipper.append(
-                (center_x + blow_radius * math.cos(angle),
-                 center_y + blow_radius * math.sin(angle)
+            clipper_points.append(
+                (point.x + blow_radius * math.cos(angle),
+                 point.y + blow_radius * math.sin(angle)
                  )
             )
+        clipper_polygon = Polygon(clipper_points)
 
-        # calculating new obstacle(s)
-        pc = pyclipper.Pyclipper()
-        pc.AddPath(obstacle, pyclipper.PT_CLIP, True)
-        pc.AddPath(clipper, pyclipper.PT_SUBJECT, True)
-        if not pc.Execute(pyclipper.CT_DIFFERENCE):  # if whole clipping polygon is inside subject
-            return
-        pc.Clear()
-        pc.AddPath(obstacle, pyclipper.PT_SUBJECT, True)
-        pc.AddPath(clipper, pyclipper.PT_CLIP, True)
-        new_obstacles = pc.Execute(pyclipper.CT_DIFFERENCE, pyclipper.PFT_EVENODD)
-
-        for obstacle in new_obstacles:
-            if not obstacle:
-                continue
-            # translating vertices coordinates back to the game units
-            obstacle = [(x * float_precision, y * float_precision) for x, y in obstacle]
-            game.obstacles.append(obstacle)  # adding new obstacle
-            self.add_batch_obstacle(obstacle)  # creating new shapes
+        # creating new obstacles
+        difference = obstacle.difference(clipper_polygon)
+        match difference.geom_type:
+            case "MultiPolygon":
+                difference = list(difference.geoms)
+            case "Polygon":
+                if difference.is_empty:
+                    return
+                difference = [difference]
+            case _:
+                difference = []
+                print("unknown difference type: ", _)
+        for polygon in difference:
+            game.obstacles.append(polygon)  # adding new obstacle
+            self.add_batch_obstacle(polygon)  # creating new shapes
 
     def on_update(self, delta_time=1. / 60):
         window = self.window
@@ -559,8 +552,7 @@ class GameView(View):
                                                                           line_width=1 * window.scale))
 
                 # checking for collision with obstacles
-                for obstacle_index in range(len(game.obstacles)):
-                    obstacle = Polygon(game.obstacles[obstacle_index])
+                for obstacle_index, obstacle in enumerate(game.obstacles):
                     intersections = segment.intersection(obstacle)
                     if intersections:
                         first_collision_point = None
@@ -661,7 +653,7 @@ class GameView(View):
             self.add_batch_obstacle(polygon)
 
     def add_batch_obstacle(self, polygon):
-        """Takes a polygon on input in game units,
+        """Takes a shapely polygon on input in game units,
          translates to the pixels and adds it to the local obstacle batch. Also creates border for it"""
 
         obstacle = []
