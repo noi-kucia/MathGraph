@@ -186,10 +186,5 @@ To avoid an unpredictable behavior, I recommend abstain of using meaningless lar
 will be rather horizontal line, than expected vertical because of large values was trimmed and the difference between 2 point 
 was also annihilated. Same result may give addition off large number to any evaluation: `sin (5x) + 1000000000000`
 
-Modulo operator returns remainder of Donald Knuth's floored division. It means that `-3.4 % 1` will return `0.6` because 
-`-3.4-floor(-3.4) = -3.4-(-4) = 0.6`. It's quite hard operator, but very powerful. This operator makes a sharp jump,
-using which you can go through obstacles, teammates or even enemies! 2 points are connected by red line, but it's not a
-part of function, therefore this line hasn't collision:
-
-![](resources/modulo%20jump%20example.png)
-
+Modulo operator (%) returns remainder of Donald Knuth's floored division. It means that `-3.4 % 1` will return `0.6` because 
+`-3.4-floor(-3.4) = -3.4-(-4) = 0.6`. It's quite hard operator, but very powerful.
