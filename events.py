@@ -89,7 +89,6 @@ class EventManager(ABC):
         """dispatches some event to the dedicated server
         in development
         """
-        # TODO
         pass
 
     def add_local_event(self, event: GameEvent):
@@ -98,10 +97,10 @@ class EventManager(ABC):
 
 
 class GameEventManager(EventManager):
-    """Handles in-game events need to be executed locally on client computer"""
+    """Handles in-game events need to be executed locally on the client computer"""
 
     def listen_game_events(self, game: Game):
-        """creating local events in single-player game instead of receiving from dedicated server"""
+        """creating local events in single-player game instead of receiving them from dedicated server"""
 
         if game.timer_time <= 0:  # catching timer event
             if game.is_game_end():
