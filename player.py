@@ -20,6 +20,7 @@ import random
 import sys
 
 import arcade
+import shapely
 
 from client import Client
 
@@ -28,13 +29,15 @@ if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
 
 
 class Player:
-    texture_left, texture_right = arcade.load_texture_pair('textures/player_sprite.png')
-    texture_left_dead, texture_right_dead = arcade.load_texture_pair('textures/player_sprite_dead.png')
+    __texture_left, __texture_right = arcade.load_texture_pair('textures/player_sprite.png')
+    __texture_left_dead, __texture_right_dead = arcade.load_texture_pair('textures/player_sprite_dead.png')
+    __standard_height = 1.5  # height of the player sprite in axes units for default map size (16 y)
 
     def __init__(self, computer_player: bool = True, client: Client = None, left_player=True, name: str = None):
         self.sprite = None
         self.nick = None
         self.alive = True
+        self.hitbox = None  # contains the hitbox shapely object, used to calculate collision
         self.computer_player = computer_player
         self.left_player = left_player
         # keep player Client object with all information about user to display
@@ -44,47 +47,46 @@ class Player:
             self.client = Client()
             if name:
                 self.client.name = name
-        # graphic coordinates of player
         self.x = None
         self.y = None
+        self.player_size = None  # height and weight of square around player sprite
 
-    def create_sprite(self, window):
-        """this method must be called after creation of the game to create the sprite,
-        bc it's coordinates depends on game parameters"""
+    def set_dead_texture(self):
+        self.sprite.texture = self.__texture_left_dead if self.left_player else self.__texture_right_dead
 
-        GRAPH_TOP_EDGE = window.GRAPH_TOP_EDGE
-        GRAPH_BOTTOM_EDGE = window.GRAPH_BOTTOM_EDGE
-        GRAPH_LEFT_EDGE = int(
-            window.SCREEN_WIDTH - (GRAPH_TOP_EDGE - GRAPH_BOTTOM_EDGE) * window.lobby.game.proportion_x2y) // 2
-        GRAPH_RIGHT_EDGE = window.SCREEN_WIDTH - GRAPH_LEFT_EDGE
-        player_scale = 0.35
+    def set_alive_texture(self):
+        self.sprite.texture = self.__texture_left if self.left_player else self.__texture_right
+
+    def create_sprite(self, view):
+        """this method must be called after creation of the game to create the sprite and hitbox,
+        because their coordinates depends on game parameters.
+
+        Does not check for collision with obstacles, so must be called before obstacle creation"""
+
+        game = view.game
+        self.player_size = self.__standard_height * game.game_field_ratio
+
         while True:
-            if self.left_player:
-                rand_x = random.randint(
-                    int(GRAPH_LEFT_EDGE + self.texture_left.width * player_scale / 2 * window.scale),
-                    int(window.SCREEN_X_CENTER - self.texture_left.width * player_scale / 2 * window.scale))
-            else:
-                rand_x = random.randint(
-                    int(window.SCREEN_X_CENTER + self.texture_left.width * player_scale / 2 * window.scale),
-                    int(GRAPH_RIGHT_EDGE - self.texture_left.width * player_scale / 2 * window.scale))
-            rand_y = random.randint(int(GRAPH_BOTTOM_EDGE + 10 * window.scale
-                                        + self.texture_left.width * player_scale / 2 * window.scale),
-                                    int(GRAPH_TOP_EDGE - 10 * window.scale
-                                        - self.texture_left.width * player_scale / 2 * window.scale))
-            self.sprite = arcade.Sprite(self.texture_left if self.left_player else self.texture_right,
-                                        scale=player_scale * window.scale, center_x=rand_x, center_y=rand_y)
-            if (not window.lobby.game.players_sprites_list) or \
-                    (not arcade.check_for_collision_with_list(self.sprite, window.lobby.game.players_sprites_list)):
-                break
-        self.x = (self.sprite.center_x - window.SCREEN_X_CENTER) * window.lobby.game.x_edge * 2 / (
-                GRAPH_RIGHT_EDGE - GRAPH_LEFT_EDGE)
-        self.y = (self.sprite.center_y - (GRAPH_TOP_EDGE + GRAPH_BOTTOM_EDGE) / 2) * window.lobby.game.y_edge * 2 / (
-                GRAPH_TOP_EDGE - GRAPH_BOTTOM_EDGE)
+            # generating position and sprite
+            self.x = random.uniform(self.player_size, game.x_edge - self.player_size)
+            self.y = random.uniform(-game.y_edge + self.player_size, game.y_edge - self.player_size)
+            if self.left_player:  # if player is from the left teem, just shifting him to the left side
+                self.x -= game.x_edge
 
-        window.lobby.game.players_sprites_list.append(self.sprite)
-        window.lobby.game.players_sprites_list.initialize()  # to avoid lags during first drawing
+            self.sprite = arcade.Sprite(self.__texture_left if self.left_player else self.__texture_right,
+                                        center_x=self.x * view.px_per_unit + view.graph_x_center,
+                                        center_y=self.y * view.px_per_unit + view.graph_y_center,
+                                        scale=self.player_size * view.px_per_unit / self.__texture_left.height)
+            if (not game.players_sprites_list) or \
+                    (not arcade.check_for_collision_with_list(self.sprite, game.players_sprites_list)):
+                break  # repeat until sprite isn't overlapping any other sprite
+
+        game.players_sprites_list.append(self.sprite)
+
+        # creating hitbox
+        self.hitbox = shapely.Point(self.x, self.y).buffer(self.player_size / 2 * 0.9)  # circular polygon
 
         # adding nick text object only once here
-        self.nick = arcade.Text(self.client.name, start_x=self.sprite.center_x,
-                                start_y=self.sprite.bottom, anchor_y='top', anchor_x='center',
-                                font_size=int(14 * window.scale), color=arcade.color.WHITE)
+        self.nick = arcade.Text(self.client.name, start_x=self.sprite.center_x, start_y=self.sprite.bottom,
+                                anchor_y='top', anchor_x='center', font_size=int(14 * view.window.scale),
+                                color=arcade.color.WHITE)

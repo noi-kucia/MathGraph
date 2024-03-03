@@ -15,15 +15,27 @@ You should have received a copy of the GNU General Public License along with Mat
 If not, see <https://www.gnu.org/licenses/>.
 """
 
-
-import asyncio
+import random
+from time import sleep
 from formula import Formula
 from game import Game
+from random import randint
+from events import StartFireEvent
 
 
-class Bot:
+def bot_start_thinking(game: Game, game_event_manager):
+    """takes game object and local game  event manager, then waits random time, generates function
+    using game object data and then adds local fire event with generated function"""
 
-    def generate_function(self, game: Game) -> Formula:
-        """Takes game object as input and somehow calculates formula for
-        currently active player. Takes list of obstacles from game.obstacles """
-        pass
+    sleep(randint(1, 5))
+    formula = generate_function(game)
+    game_event_manager.add_local_event(StartFireEvent(formula))
+
+
+def generate_function(game: Game) -> Formula:
+    """Takes game object as input and somehow calculates formula for
+    currently active player. Takes list of obstacles from game.obstacles """
+    formula = random.choice(
+        ["3 cos (5x) / x", ' sin x', '5', 'x', 'abs(x)', '-x', 'exp(0.01x)', 'x%3', '(tan x) / 1000',
+         '2sin (x) - (2sin(x)%0.5)'])
+    return Formula(formula)
