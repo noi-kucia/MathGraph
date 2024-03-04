@@ -137,7 +137,7 @@ no complex numbers or anything else!
 
 All operators have the same precedence as in math :
 ```
-	highest ()
+	high   ()
 	  |	^
 	  v  	*/:%
 	 low    +,- 
