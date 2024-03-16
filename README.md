@@ -77,7 +77,7 @@ So, first of all let's consider the game mechanic:
 You need to write a mathematical formula in input field (only the right part of it without "y=", etc.).
 After you click the fire button, if your formula is correct,
 a red line will start to draw a graph of the function. If the graph touches a player, it will kill them, but when it crosses the
-edge of graph or hits an obstacle, it will stop, and next alive player form opposite team will take turn.
+edge of graph or hits an obstacle, it will stop, and next alive player form opposite team will take the turn.
 
 
 Your aim is to create such formula, which will avoid all obstacles on your way and touch as many enemies as possible.
@@ -137,7 +137,7 @@ no complex numbers or anything else!
 
 All operators have the same precedence as in math :
 ```
-	highest ()
+	high    ()
 	  |	^
 	  v  	*/:%
 	 low    +,- 
@@ -186,15 +186,5 @@ To avoid an unpredictable behavior, I recommend abstain of using meaningless lar
 will be rather horizontal line, than expected vertical because of large values was trimmed and the difference between 2 point 
 was also annihilated. Same result may give addition off large number to any evaluation: `sin (5x) + 1000000000000`
 
-Modulo operator returns remainder of Donald Knuth's floored division. It means that `-3.4 % 1` will return `0.6` because 
-`-3.4-floor(-3.4) = -3.4-(-4) = 0.6`. It's quite hard operator, but very powerful. This operator makes a sharp jump,
-using which you can go through obstacles, teammates or even enemies! 2 points are connected by red line, but it's not a
-part of function, therefore this line hasn't collision:
-
-![](resources/modulo%20jump%20example.png)
-
-Please, note that although the function is one line, essentially it's just connected points, so if your function grows rapidly
-as `x%5`, this vertical lines are just part of design and aren't real, therefore they can go through obstacles and players.
-
-in case of `%` operator it can be useful, but be careful with other sharp functions like `5 sin(100x)`: it looks very
-dense, but it's only illusion and if you are very lucky,  it also can go through enemy.
+Modulo operator (%) returns remainder of Donald Knuth's floored division. It means that `-3.4 % 1` will return `0.6` because 
+`-3.4-floor(-3.4) = -3.4-(-4) = 0.6`. It's quite hard operator, but very powerful.
