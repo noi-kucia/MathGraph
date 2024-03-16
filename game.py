@@ -24,6 +24,7 @@ from threading import Timer
 
 import pyglet.graphics
 import shapely
+from arcade.shape_list import Shape
 
 from UIFixedElements import *
 from arcade import shape_list
@@ -77,9 +78,6 @@ class Game:
         self.formula = None  # Formula class object
         self.obstacles_color = ()
         self.obstacles_border_color = ()
-
-        # list of formula segments
-        self.formula_segments = shape_list.ShapeElementList()
 
     def create_obstacles(self):
         """generates obstacle on server machine using axes units coordinates,
@@ -155,7 +153,6 @@ class Game:
         self.players_sprites_list = SpriteList(use_spatial_hash=True)
         self.shooting = False
         self.formula_current_x = None
-        self.formula_segments = shape_list.ShapeElementList()
         self.all_players = self.left_team + self.right_team
         self.game_field_ratio = self.y_edge / 16
 
@@ -214,12 +211,13 @@ class GameView(View):
 
     def __init__(self, window: Window):
         super().__init__(window)
+        self.shadow_formula_transparency = None
         self.translation_y_delta = None
         self.obstacle_border_batch_shapes = None
-        self.obstacles_batch: pyglet.graphics.Batch() = None
+        self.obstacles_batch: pyglet.graphics.Batch
         self.obstacle_body_batch_shapes = None
-        self.formula_field: AdvancedUIInputText = None
-        self.time_text: Text = None
+        self.formula_field: AdvancedUIInputText
+        self.time_text: Text
         self.game_field_objects = shape_list.ShapeElementList()  # contains all static shape elements of the interface
         self.nick_names = []  # list to keep nick Text objects
 
@@ -277,6 +275,10 @@ class GameView(View):
         self.game.timer_time = self.game.max_time_s
         self.timer = Timer(1, self.time_tick)
         self.timer.start()
+
+        # batch of formula segments
+        self.formula_batch = pyglet.graphics.Batch()
+        self.formula_shapes = []
 
     def time_tick(self):
         self.game.timer_time -= 1
@@ -517,6 +519,17 @@ class GameView(View):
         except Exception as e:
             print(e)
 
+        # making formula smoothly disappear after shot
+        if self.formula_shapes and not game.shooting:
+            self.shadow_formula_transparency -= 5
+            for segment in self.formula_shapes:
+                for line in segment:
+                    line.color = (255, 255, 255, self.shadow_formula_transparency)
+            if self.shadow_formula_transparency <= 0:
+                # deleting old formula objects
+                self.formula_batch = None
+                self.formula_shapes.clear()
+
         if game.shooting:
             """when the game shooting event is active, a part of the formula is drawn each frame.
             This process is local to performance needs and to alleviate server's load,
@@ -525,11 +538,11 @@ class GameView(View):
             Then, if the game is multiplayer, a server will send its version of the  result of the shoot like who 
             was killed, which obstacles have been damaged and so on"""
 
-            shooter_right: bool = game.active_player in game.right_team
-            segments_per_frame = int(12 * self.window.scale)
-            x_step_px = 0.5 * window.scale
+            is_shooter_right: bool = game.active_player in game.right_team
+            segments_per_frame = int(6 * self.window.scale)
+            x_step_px = 1 * window.scale
             x_step = x_step_px / self.px_per_unit * (
-                -1 if shooter_right else 1)  # step in axis units ( regards the sign )
+                -1 if is_shooter_right else 1)  # step in axis units ( regards the sign )
             point_list = []
 
             try:
@@ -545,8 +558,14 @@ class GameView(View):
                 screen_points = [
                     (self.graph_x_center + self.px_per_unit * x, self.graph_y_center + self.px_per_unit * y) for x, y in
                     point_list]
-                game.formula_segments.append(shape_list.create_line_strip(point_list=screen_points, color=color.RED,
-                                                                          line_width=1 * window.scale))
+
+                segment_shapes = []
+                x1, y1 = screen_points[0]
+                for x2, y2 in screen_points:
+                    segment_shapes.append(pyglet.shapes.Line(x1, y1, x2, y2, color=color.RED,
+                                                                  batch=self.formula_batch))
+                    x1, y1 = x2, y2
+                self.formula_shapes.append(segment_shapes)
 
                 # checking for collision with obstacles
                 for obstacle_index, obstacle in enumerate(game.obstacles):
@@ -556,15 +575,15 @@ class GameView(View):
                         match intersections.geom_type:
                             case 'LineString':
                                 first_collision_point = Point(
-                                    intersections.coords[-1] if shooter_right else intersections.coords[0])
+                                    intersections.coords[-1] if is_shooter_right else intersections.coords[0])
                             case 'MultiLineString':
                                 for line in intersections.geoms:
                                     if not first_collision_point:
                                         first_collision_point = Point(
-                                            line.coords[-1] if shooter_right else line.coords[0])
-                                    elif shooter_right and line.coords[-1][0] > first_collision_point.x:
+                                            line.coords[-1] if is_shooter_right else line.coords[0])
+                                    elif is_shooter_right and line.coords[-1][0] > first_collision_point.x:
                                         first_collision_point = Point(line.coords[-1])
-                                    elif not shooter_right and line.coords[0][0] < first_collision_point.x:
+                                    elif not is_shooter_right and line.coords[0][0] < first_collision_point.x:
                                         first_collision_point = Point(line.coords[0])
                             case 'Point':
                                 first_collision_point = intersections
@@ -598,20 +617,18 @@ class GameView(View):
             except Exception as exception:
                 self.stop_shooting()
                 if exception == ZeroDivisionError:
-                    print('Zero dividing found! Shoot stopped!')
+                    print('Zero dividing found! Shot has been interrupted!')
                 elif exception == ArgumentOutOfRange:
-                    print('Argument error! Shoot stopped!')
+                    print('Argument error! Shot has  been interrupted!')
                 else:
                     print('some error occurred!', exception)
 
     def stop_shooting(self):
         game = self.game
-        self.on_draw()  # drawing last segment with overlapping
-        time.sleep(1 / 60)
+        self.shadow_formula_transparency = 255
         game.shooting = False
         game.formula = None
         game.formula_current_x = None
-        game.formula_segments = None
         if not game.multiplayer:
             from events import GameEndEvent, ActivePlayerChangeEvent
             if game.is_game_end():
@@ -629,8 +646,7 @@ class GameView(View):
             text.draw()
         self.bottom_panel_draw()
         self.obstacles_draw()
-        if self.window.lobby.game.formula_segments:  # if there is a formula to draw
-            self.draw_formula()
+        self.draw_formula()
         self.players_draw()
         self.manager.draw()
 
@@ -705,7 +721,8 @@ class GameView(View):
             # arcade.draw_circle_filled(center_x, center_y, radius, (255, 0, 0, 200))
 
     def draw_formula(self):
-        self.window.lobby.game.formula_segments.draw()
+        if self.formula_batch:
+            self.formula_batch.draw()
 
     def bottom_panel_draw(self):
         window = self.window

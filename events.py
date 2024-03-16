@@ -18,7 +18,7 @@ from abc import ABC, abstractmethod
 from threading import Timer, Thread
 from typing import List
 
-from arcade import shape_list
+from pyglet.graphics import Batch
 
 from formula import Formula
 from game import Game, GameView
@@ -148,7 +148,7 @@ class GameEventManager(EventManager):
                     game.shooting = True
                     game.formula_current_x = game.active_player.x
                     view.translation_y_delta = game.active_player.y - game.formula.evaluate(game.active_player.x)
-                    game.formula_segments = shape_list.ShapeElementList()
+                    view.formula_batch = Batch()
 
                 case "TimerReset":
                     # resetting timer time to the maximum value and starting new Timer thread
